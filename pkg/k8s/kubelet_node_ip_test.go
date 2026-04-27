@@ -53,6 +53,9 @@ func TestMergeNodeIPIntoKubeadmArgsLineAppend(t *testing.T) {
 	if !strings.Contains(out, "--cgroup-driver=systemd") {
 		t.Fatalf("expected --cgroup-driver=systemd preserved: %q", out)
 	}
+	if strings.Count(out, "--node-ip=") != 1 {
+		t.Fatalf("expected single --node-ip: %q", out)
+	}
 }
 
 // Already correct node-ip yields no changes (changed=false) and there should be byte-for-byte identical content.
