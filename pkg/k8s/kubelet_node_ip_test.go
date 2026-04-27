@@ -72,6 +72,39 @@ func TestMergeNodeIPIntoKubeadmArgsLineNoop(t *testing.T) {
 	}
 }
 
+// Trailing whitespace or CR after the closing quote (e.g. CRLF split) must not break parsing;
+// noop must not rewrite when there is only the --node-ip difference from normalized line.
+func TestMergeNodeIPIntoKubeadmArgsLineQuotedValueTrailingJunk(t *testing.T) {
+	const ip = "192.168.123.12"
+	t.Run("trailing spaces after quote noop", func(t *testing.T) {
+		in := `KUBELET_KUBEADM_ARGS="--x=1 --node-ip=` + ip + `"   ` + "\n"
+		out, changed, err := mergeNodeIPIntoKubeadmArgsLine(in, ip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if changed {
+			t.Fatalf("unexpected change: %q", out)
+		}
+		if out != in {
+			t.Fatalf("noop should keep file as-is\ngot:  %q\nwant: %q", out, in)
+		}
+	})
+	t.Run("CR after quote before newline", func(t *testing.T) {
+		in := "KUBELET_KUBEADM_ARGS=\"--cgroup-driver=systemd\"\r\n"
+		want := `KUBELET_KUBEADM_ARGS="--cgroup-driver=systemd --node-ip=` + ip + `"` + "\n"
+		out, changed, err := mergeNodeIPIntoKubeadmArgsLine(in, ip)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !changed {
+			t.Fatal("expected change")
+		}
+		if out != want {
+			t.Fatalf("output mismatch\ngot:  %q\nwant: %q", out, want)
+		}
+	})
+}
+
 // Table-driven checks for invalid IP, missing KUBELET_KUBEADM_ARGS= line, and unquoted value.
 func TestMergeNodeIPIntoKubeadmArgsLineErrors(t *testing.T) {
 	validLine := `KUBELET_KUBEADM_ARGS="--node-ip=10.0.0.1"`

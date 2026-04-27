@@ -29,7 +29,7 @@ func mergeNodeIPIntoKubeadmArgsLine(fileContent, nodeIP string) (string, bool, e
 			continue
 		}
 		found = true
-		rest := strings.TrimPrefix(line, prefix)
+		rest := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 		if len(rest) < 2 || rest[0] != '"' || rest[len(rest)-1] != '"' {
 			return "", false, fmt.Errorf("%s: expected quoted value, got %q", kubeadmKubeletFlagsPath, line)
 		}
@@ -44,7 +44,8 @@ func mergeNodeIPIntoKubeadmArgsLine(fileContent, nodeIP string) (string, bool, e
 		}
 		merged := strings.TrimSpace(strings.Join(append(kept, "--node-ip="+nodeIP), " "))
 		newLine := prefix + `"` + merged + `"`
-		if newLine != line {
+		trimmedLine := strings.TrimSpace(line)
+		if newLine != trimmedLine {
 			changed = true
 			lines[i] = newLine
 		}
