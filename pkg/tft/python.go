@@ -160,9 +160,8 @@ func EnsureVenv(cmdExec platform.CommandExecutor, tftRepo, hostPython string) er
 		{"-m", "pip", "install", "-U", "pip"},
 		{"-m", "pip", "install", "-r", "requirements.txt"},
 	} {
-		args := append([]string{py}, step...)
-		if err := cmdExec.RunCmdInDir(log.LevelInfo, tftRepo, args[0], args[1:]...); err != nil {
-			return fmt.Errorf("%s: %w", strings.Join(args, " "), err)
+		if err := cmdExec.RunCmdInDir(log.LevelInfo, tftRepo, py, step...); err != nil {
+			return fmt.Errorf("%s %s: %w", py, strings.Join(step, " "), err)
 		}
 	}
 	log.Info("TFT venv ready: %s", py)
