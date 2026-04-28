@@ -643,11 +643,16 @@ func (e *DockerExecutor) RunCmd(level log.Level, name string, args ...string) er
 // RunCmdInDir executes a command with arguments in a specific working directory inside the container
 func (e *DockerExecutor) RunCmdInDir(level log.Level, dir string, name string, args ...string) error {
 	name, args = stripSudoCmd(e.HasSudo(), name, args)
-	command := fmt.Sprintf("cd '%s' && '%s'", dir, name)
-	for _, arg := range args {
-		escaped := strings.ReplaceAll(arg, "'", "'\\''")
-		command += " '" + escaped + "'"
+	var sb strings.Builder
+	sb.WriteString("cd ")
+	sb.WriteString(ShQuote(dir))
+	sb.WriteString(" && ")
+	sb.WriteString(ShQuote(name))
+	for _, a := range args {
+		sb.WriteString(" ")
+		sb.WriteString(ShQuote(a))
 	}
+	command := sb.String()
 
 	dockerArgs := []string{"exec", e.containerID, "sh", "-c", command}
 	cmd := exec.Command(e.containerBin, dockerArgs...)

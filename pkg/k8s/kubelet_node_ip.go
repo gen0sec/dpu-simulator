@@ -29,22 +29,53 @@ func mergeNodeIPIntoKubeadmArgsLine(fileContent, nodeIP string) (string, bool, e
 			continue
 		}
 		found = true
-		rest := strings.TrimPrefix(line, prefix)
+		rest := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 		if len(rest) < 2 || rest[0] != '"' || rest[len(rest)-1] != '"' {
 			return "", false, fmt.Errorf("%s: expected quoted value, got %q", kubeadmKubeletFlagsPath, line)
 		}
 		inner := rest[1 : len(rest)-1]
 		fields := strings.Fields(inner)
-		var kept []string
+		desired := "--node-ip=" + nodeIP
+		desiredCount, otherCount := 0, 0
 		for _, f := range fields {
-			if strings.HasPrefix(f, "--node-ip=") {
+			if !strings.HasPrefix(f, "--node-ip=") {
 				continue
 			}
-			kept = append(kept, f)
+			if f == desired {
+				desiredCount++
+			} else {
+				otherCount++
+			}
 		}
-		merged := strings.TrimSpace(strings.Join(append(kept, "--node-ip="+nodeIP), " "))
+		var merged string
+		if desiredCount > 0 && otherCount == 0 {
+			// Only the target IP appears (possibly duplicated); keep a single --node-ip in flag order.
+			var kept []string
+			seenDesired := false
+			for _, f := range fields {
+				if strings.HasPrefix(f, "--node-ip=") {
+					if f == desired && !seenDesired {
+						kept = append(kept, desired)
+						seenDesired = true
+					}
+					continue
+				}
+				kept = append(kept, f)
+			}
+			merged = strings.TrimSpace(strings.Join(kept, " "))
+		} else {
+			var kept []string
+			for _, f := range fields {
+				if strings.HasPrefix(f, "--node-ip=") {
+					continue
+				}
+				kept = append(kept, f)
+			}
+			merged = strings.TrimSpace(strings.Join(append(kept, desired), " "))
+		}
 		newLine := prefix + `"` + merged + `"`
-		if newLine != line {
+		trimmedLine := strings.TrimSpace(line)
+		if newLine != trimmedLine {
 			changed = true
 			lines[i] = newLine
 		}
@@ -92,7 +123,7 @@ func EnsureKubeletK8sNodeIP(cmdExec platform.CommandExecutor, k8sNodeIP string) 
 // WaitAllNodesReady runs kubectl wait against the given cluster admin kubeconfig on the executor.
 func WaitAllNodesReady(cmdExec platform.CommandExecutor, timeout time.Duration) error {
 	script := "sudo kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready nodes --all --timeout=" +
-		fmt.Sprintf("%ds", int(timeout.Round(time.Second)/time.Second))
+		fmt.Sprintf("%ds", int(timeout.Round(time.Second).Seconds()))
 	stdout, stderr, err := cmdExec.ExecuteWithTimeout(script, timeout+30*time.Second)
 	if err != nil {
 		return fmt.Errorf("kubectl wait nodes: %w\nstdout: %s\nstderr: %s", err, strings.TrimSpace(stdout), strings.TrimSpace(stderr))

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -508,10 +507,6 @@ func CreateCloudInitISO(cmdExec platform.CommandExecutor, sshConfig config.SSHCo
 	userDataPath := filepath.Join(tempDir, "user-data")
 	if err := os.WriteFile(userDataPath, []byte(userData), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write user-data: %w", err)
-	}
-
-	if _, err := exec.LookPath("genisoimage"); err != nil {
-		return "", fmt.Errorf("genisoimage not found in PATH err:%s", err)
 	}
 
 	out, errOut, err := platform.RunCommandInDir(cmdExec, "", "genisoimage", []string{

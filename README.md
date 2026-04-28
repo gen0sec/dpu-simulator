@@ -22,6 +22,7 @@ All these DPUs have common simularities, some we can emulate better than others.
 - 🚀 **Multiple deployment modes**: VMs (libvirt) or Containers (Kind)
 - ☸️ Kubernetes (kubeadm, kubelet, kubectl) pre-installed
 - 🔀 OVN-Kubernetes or Flannel CNI support
+- ⚡ **OVN-Kubernetes DPU offloading**: optional split topology (DPU-host vs DPU cluster) via `kubernetes.offload_dpu`; see `config-ovnk-offload.yaml` (VM) and `config-kind-ovnk-offload.yaml` (Kind)
 - 🌐 Multiple network support (NAT, Host-To-DPU interfaces, Layer 2 Bridge)
 - ✅ Automatic cluster setup and CNI installation
 - 🧹 Cleanup scripts for both modes
@@ -51,6 +52,10 @@ All these DPUs have common simularities, some we can emulate better than others.
 
 ### Dependencies
 Runtime dependencies are automatically installed by dpu-sim. For example the dpu-sim binary will output the following if all depencies are meet on the system:
+
+Separate dependencies are checked based on whether the provided configuration deploys VM or Kind mode.
+
+For VM-based deployments:
 ```bash
 === Checking Dependencies ===
 ✓ Detected Linux distribution: rhel 9.6 (package manager: dnf, architecture: x86_64)
@@ -68,15 +73,29 @@ Runtime dependencies are automatically installed by dpu-sim. For example the dpu
 ✓ aarch64-uefi-firmware is installed
 ✓ All dependencies are available
 ```
-Seperate dependencies are checked whether the provided configuration file is deploying VM vs. Kind modes.
+
+For Kind-based deployments:
+```bash
+=== Checking Dependencies ===
+✓ Detected Linux distribution: rhel 9.6 (package manager: dnf, architecture: x86_64)
+✓ wget is installed
+✓ pip3 is installed
+✓ jinjanator is installed
+✓ git is installed
+✓ openvswitch is installed
+✓ kubectl is installed
+✓ Container Runtime is installed
+✓ kind is installed
+✓ All dependencies are available
+```
 
 ### Required Packages
 
 The dpu-sim should install all dependecies by detecting the system's Linux distribution. However some distributions require enabling subscriptions to allow the installation of some packages. This is outside the scope of dpu-sim; however depending on the distribution, dpu-sim will try to enable repositories.
 
-### Required Services
+### Required Services for VM-based deployments
 
-Although dpu-sim tries to install dependencies, the user may be required to start required services. This can potentially go away once dpu-sim handles these required services in its entirety.
+Although dpu-sim tries to install dependencies, the user may be required to start required services for VM-based deployments. This can potentially go away once dpu-sim handles these required services in its entirety.
 
 ```bash
 # Start and enable libvirt sockets
@@ -97,7 +116,7 @@ sudo usermod -a -G libvirt $USER
 newgrp libvirt
 ```
 
-### Required SSH Key Setup
+### Required SSH Key Setup for VM-based deployments
 
 Generate SSH keys if you don't have them:
 
@@ -118,25 +137,29 @@ Building binaries...
   Building vmctl...
 Build complete! Binaries are in bin/
 $ ls -lh bin/
-total 86M
--rwxr-xr-x. 1 root root 54M Feb 18 23:45 dpu-sim
--rwxr-xr-x. 1 root root 33M Feb 18 23:45 vmctl
+total 87M
+-rwxr-xr-x. 1 root root 55M Apr 27 17:40 dpu-sim
+-rwxr-xr-x. 1 root root 33M Apr 27 17:40 vmctl
 ```
 ### Makefile Commands
 
 ```bash
-make                # Show help
-make build          # Build all binaries
-make test           # Run tests
-make test-coverage  # Run tests with HTML coverage report
-make clean          # Clean build artifacts
-make install        # Install binaries to $GOPATH/bin
-make fmt            # Format code
-make vet            # Run go vet
-make lint           # Run golangci-lint
-make check          # Run fmt, vet, and test
-make build-all      # Cross-compile for multiple platforms
-make deps           # Download dependencies
+DPU Simulator - Makefile commands:
+  build                Build all binaries
+  test                 Run tests
+  test-coverage        Run tests and show coverage
+  test-integration     Run integration tests
+  clean                Clean build artifacts
+  install              Install binaries to $GOPATH/bin
+  fmt                  Format code
+  vet                  Run go vet
+  lint                 Run golangci-lint
+  check                Run all checks (fmt, vet, test)
+  build-all            Cross-compile for Linux (amd64, arm64) and macOS
+  deps                 Download dependencies
+  help                 Display this help message
+  tft-venv             Create TFT Python venv (needs Python >= 3.11; pass PYTHON= if needed)
+  tft-run              Run TFT via dpu-sim (set CONFIG=path/to.yaml; uses submodule .tft-venv if present)
 ```
 
 ## Configuration
@@ -194,28 +217,7 @@ kind:
       k8s_role: "worker"
       k8s_cluster: "dpu-sim-dpu-kind"
       host: "host-2-1"
-
-kubernetes:
-  version: "1.33"
-  clusters:
-    - name: "dpu-sim-host-kind"
-      pod_cidr: "10.244.0.0/16"
-      service_cidr: "10.245.0.0/16"
-      cni: "ovn-kubernetes"
-      addons:
-        - "multus"
-        - "whereabouts"
-        - "cert-manager"
-    - name: "dpu-sim-dpu-kind"
-      pod_cidr: "10.246.0.0/16"
-      service_cidr: "10.247.0.0/16"
-      cni: "ovn-kubernetes"
-
-registry:
-  containers:
-    - name: "ovn-kube"
-      cni: "ovn-kubernetes"
-      tag: "ovn-kube:dpu-sim"
+...
 ```
 
 To look up a node by its config name after deployment, use the label: `kubectl get nodes -l dpu-sim.org/node-name=host-1-1`.
@@ -424,6 +426,8 @@ Everything Kubernetes related is in the `kubernetes` section. By default version
 - **service_cidr**: Default is 10.245.0.0/16. This is the custom service CIDR.
 - **cni**: Selects which CNI should be used in the cluster such as ovn-kubernetes
 - **addons**: Optional ordered list of additional components to install (currently `multus`, `whereabouts`, `cert-manager`)
+
+**OVN-Kubernetes DPU offloading** (`kubernetes.offload_dpu: true`): deploys OVN-Kubernetes in DPU-host mode on the cluster whose workers are host nodes, and in DPU mode on the cluster whose workers are DPU nodes (the DPU cluster is whichever `kubernetes.clusters` entry contains VMs or Kind nodes with `type: dpu`). When the host cluster uses OVN-Kubernetes, the DPU cluster can still use another primary CNI (for example Flannel) while OVN-Kubernetes is installed there in DPU mode so the offload path is wired correctly. Example configs: `config-ovnk-offload.yaml` (VM mode) and `config-kind-ovnk-offload.yaml` (Kind mode). Single-cluster host+DPU in one Kubernetes cluster is not supported for this topology yet.
 
 Multiple cluster configuration example:
 ```yaml

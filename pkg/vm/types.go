@@ -23,8 +23,16 @@ type VMManager struct {
 }
 
 // NewVMManager creates a new VMManager with the given config, connecting to libvirt.
-// cfg can be nil for operations that don't require configuration.
-func NewVMManager(cfg *config.Config) (*VMManager, error) {
+// hostExec must be non-nil; it runs host-local commands (qemu-img, ovs-vsctl, etc.).
+// Callers typically use platform.NewLocalExecutor(); tests may pass a stub.
+func NewVMManager(cfg *config.Config, hostExec platform.CommandExecutor) (*VMManager, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	if hostExec == nil {
+		return nil, fmt.Errorf("hostExec is nil")
+	}
+
 	distro, err := platform.GetHostDistro()
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect host distro: %w", err)
@@ -41,10 +49,6 @@ func NewVMManager(cfg *config.Config) (*VMManager, error) {
 	}
 	log.Debug("✓ Connected to libvirt: %s", hostname)
 
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-
 	hostSpec, err := hostArchSpec(distro.Architecture)
 	if err != nil {
 		conn.Close()
@@ -55,7 +59,7 @@ func NewVMManager(cfg *config.Config) (*VMManager, error) {
 		conn:       conn,
 		config:     cfg,
 		hostDistro: distro,
-		hostExec:   platform.NewLocalExecutor(),
+		hostExec:   hostExec,
 		hostSpec:   hostSpec,
 	}, nil
 }

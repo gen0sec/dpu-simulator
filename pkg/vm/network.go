@@ -151,11 +151,11 @@ func ensureLibvirtNATFirewallBackend(cmdExec platform.CommandExecutor) error {
 // This was observed in our VM bring-up on Ubuntu 22.04.5 LTS with errors like:
 // "table `nat` is incompatible, use 'nft' tool" during libvirt NAT probing.
 func ensureIptablesLegacyForLibvirtNAT(cmdExec platform.CommandExecutor) (bool, error) {
-	probeOut, probeErr, err := platform.RunCommandInDir(cmdExec, "", "iptables", []string{"-w", "--table", "nat", "--list-rules"}, 30*time.Second)
-	if err == nil {
-		if !strings.Contains(platform.CombinedCmdOutput(probeOut, probeErr), "table `nat' is incompatible, use 'nft' tool") {
-			return false, nil
-		}
+	probeOut, probeErr, _ := platform.RunCommandInDir(cmdExec, "", "iptables", []string{"-w", "--table", "nat", "--list-rules"}, 30*time.Second)
+	combined := platform.CombinedCmdOutput(probeOut, probeErr)
+	const natIncompatMarker = "table `nat' is incompatible, use 'nft' tool"
+	if !strings.Contains(combined, natIncompatMarker) {
+		return false, nil
 	}
 
 	pairs := []struct {

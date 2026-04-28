@@ -101,7 +101,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -142,7 +142,7 @@ func runSSH(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create VM manager
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -177,7 +177,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create VM manager
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -219,7 +219,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -241,7 +241,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -263,7 +263,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
@@ -285,7 +285,7 @@ func runReboot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	vmMgr, err := vm.NewVMManager(cfg)
+	vmMgr, err := vm.NewVMManager(cfg, platform.NewLocalExecutor())
 	if err != nil {
 		return fmt.Errorf("failed to create VM manager: %w", err)
 	}
