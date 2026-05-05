@@ -104,21 +104,11 @@ func resolveAddonInstallOrder(addons []config.AddonType) []config.AddonType {
 	return ordered
 }
 
-// BuildCNIImage builds a container image for the given registry container
-// config. This is intended to be used as a registry.BuildFunc. It dispatches
-// to the appropriate CNI-specific build logic and returns the local image name.
-func BuildCNIImage(container config.RegistryContainerConfig) (string, error) {
-	localExec := platform.NewLocalExecutor()
-	engine, err := containerengine.NewProjectEngine(localExec)
-	if err != nil {
-		return "", err
-	}
-	return BuildCNIImageWithRuntime(localExec, engine)(container)
-}
-
-// BuildCNIImageWithRuntime is BuildCNIImage with injected runtime dependencies
-// so callers can reuse a previously detected container engine.
+// BuildCNIImageWithRuntime returns a registry.BuildFunc that builds container
+// images using the provided config, executor, and engine. The config is used
+// to resolve the OVN-Kubernetes source path (--ovn-kubernetes-path override).
 func BuildCNIImageWithRuntime(
+	cfg *config.Config,
 	cmdExec platform.CommandExecutor,
 	engine containerengine.Engine,
 ) func(container config.RegistryContainerConfig) (string, error) {
@@ -127,7 +117,7 @@ func BuildCNIImageWithRuntime(
 		switch cniType {
 		case config.CNIOVNKubernetes:
 			localImage := container.Tag
-			if err := BuildOVNKubernetesImageWithEngine(cmdExec, engine, localImage, ""); err != nil {
+			if err := BuildOVNKubernetesImageWithEngine(cfg, cmdExec, engine, localImage, ""); err != nil {
 				return "", fmt.Errorf("failed to build OVN-Kubernetes image: %w", err)
 			}
 			return localImage, nil

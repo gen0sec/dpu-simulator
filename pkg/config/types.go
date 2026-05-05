@@ -55,6 +55,11 @@ type Config struct {
 	SSH             SSHConfig         `yaml:"ssh"`
 	Kubernetes      KubernetesConfig  `yaml:"kubernetes"`
 	Registry        *RegistryConfig   `yaml:"registry,omitempty"`
+	// OVNKubernetesPath overrides the default ovn-kubernetes source location
+	// (the git submodule). Set via --ovn-kubernetes-path so external CI can
+	// point dpu-sim at a separate checkout (e.g. an OVN-Kubernetes PR).
+	// This is not populated from YAML.
+	OVNKubernetesPath string `yaml:"-"`
 	// TFT is the kubernetes-traffic-flow-tests "tft" document subtree (optional).
 	// Used by `dpu-sim tft run` to generate a TFT config when --tft-config is not set.
 	TFT *TrafficFlowTestsSubtree `yaml:"tft,omitempty"`

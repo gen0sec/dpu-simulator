@@ -22,7 +22,7 @@ func (m *KindManager) BuildAndLoadImagesFromRegistryConfig(cmdExec platform.Comm
 	}
 
 	log.Info("\n=== Building registry container images (registry disabled; loading into Kind) ===")
-	build := cni.BuildCNIImageWithRuntime(cmdExec, engine)
+	build := cni.BuildCNIImageWithRuntime(cfg, cmdExec, engine)
 
 	for _, container := range cfg.Registry.Containers {
 		localImage, err := build(container)
