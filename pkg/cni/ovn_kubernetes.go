@@ -148,7 +148,7 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 		return fmt.Errorf("failed to patch CoreDNS: %w", err)
 	}
 
-	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec)
+	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec, m.config.OVNKubernetesPath)
 	if err != nil {
 		return fmt.Errorf("failed to ensure OVN-Kubernetes source: %w", err)
 	}
@@ -162,7 +162,7 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 		if err != nil {
 			return fmt.Errorf("failed to create project engine: %w", err)
 		}
-		if err := BuildOVNKubernetesImageWithEngine(m.cmdExec, engine, regContainer.Tag, ""); err != nil {
+		if err := BuildOVNKubernetesImageWithEngine(m.config, m.cmdExec, engine, regContainer.Tag, ""); err != nil {
 			return fmt.Errorf("failed to build OVN-Kubernetes image: %w", err)
 		}
 	}
@@ -394,7 +394,7 @@ func (m *CNIManager) installExternalCRDs() error {
 func (m *CNIManager) redeployOVNKubernetes(clusterName string) error {
 	log.Info("Redeploying OVN-Kubernetes via Helm on cluster %s...", clusterName)
 
-	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec)
+	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec, m.config.OVNKubernetesPath)
 	if err != nil {
 		return fmt.Errorf("failed to ensure OVN-Kubernetes source: %w", err)
 	}
@@ -481,8 +481,18 @@ func (m *CNIManager) labelOVNMasterNodes(clusterName string) error {
 	return nil
 }
 
-// getOVNKubernetesPath returns the path to the ovn-kubernetes directory
-func getOVNKubernetesPath() (string, error) {
+// getOVNKubernetesPath returns the path to the ovn-kubernetes directory.
+// When overridePath is non-empty it is used directly (absolute or resolved
+// relative to cwd); otherwise the default <project-root>/ovn-kubernetes is
+// returned.
+func getOVNKubernetesPath(overridePath string) (string, error) {
+	if overridePath != "" {
+		absPath, err := filepath.Abs(overridePath)
+		if err != nil {
+			return "", fmt.Errorf("invalid --ovn-kubernetes-path value %q: %w", overridePath, err)
+		}
+		return absPath, nil
+	}
 	projectRoot, err := platform.GetProjectRoot()
 	if err != nil {
 		return "", err
@@ -519,12 +529,21 @@ func initOVNKubernetesSubmodule(cmdExec platform.CommandExecutor, projectRoot st
 }
 
 // EnsureOVNKubernetesSource ensures the ovn-kubernetes source code is available.
-// It first tries to initialize the git submodule if it exists but is empty.
-// If submodule initialization fails or the directory doesn't exist, it clones the repository.
-func EnsureOVNKubernetesSource(cmdExec platform.CommandExecutor) (string, error) {
-	ovnPath, err := getOVNKubernetesPath()
+// When overridePath is non-empty (set via --ovn-kubernetes-path) the directory
+// is used as-is without submodule init or clone. Otherwise it tries to
+// initialize the git submodule; if that fails it clones the repository.
+func EnsureOVNKubernetesSource(cmdExec platform.CommandExecutor, overridePath string) (string, error) {
+	ovnPath, err := getOVNKubernetesPath(overridePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get OVN-Kubernetes path: %w", err)
+	}
+
+	if overridePath != "" {
+		if !isOVNKubernetesPopulated(cmdExec, ovnPath) {
+			return "", fmt.Errorf("--ovn-kubernetes-path %q does not contain OVN-Kubernetes source (missing helm/ovn-kubernetes/Chart.yaml)", ovnPath)
+		}
+		log.Info("Using OVN-Kubernetes source from --ovn-kubernetes-path=%s", ovnPath)
+		return ovnPath, nil
 	}
 
 	projectRoot, err := platform.GetProjectRoot()
@@ -590,24 +609,27 @@ func EnsureOVNKubernetesSource(cmdExec platform.CommandExecutor) (string, error)
 // imageName specifies the tag for the built image (e.g., "ovn-kube-fedora:latest").
 // By default, OVN/OVS RPMs are downloaded from Koji. To build OVN from source instead,
 // set ovnGitRef to a branch/tag/commit (e.g., "main"); pass an empty string for Koji.
-func BuildOVNKubernetesImage(cmdExec platform.CommandExecutor, imageName string, ovnGitRef string) error {
+// cfg.OVNKubernetesPath overrides the source location (empty = default submodule).
+func BuildOVNKubernetesImage(cfg *config.Config, cmdExec platform.CommandExecutor, imageName string, ovnGitRef string) error {
 	engine, err := containerengine.NewProjectEngine(cmdExec)
 	if err != nil {
 		return err
 	}
-	return BuildOVNKubernetesImageWithEngine(cmdExec, engine, imageName, ovnGitRef)
+	return BuildOVNKubernetesImageWithEngine(cfg, cmdExec, engine, imageName, ovnGitRef)
 }
 
 // BuildOVNKubernetesImageWithEngine builds the image using a preselected
 // container engine so callers can detect once and reuse it.
+// cfg.OVNKubernetesPath overrides the source location (empty = default submodule).
 func BuildOVNKubernetesImageWithEngine(
+	cfg *config.Config,
 	cmdExec platform.CommandExecutor,
 	engine containerengine.Engine,
 	imageName string,
 	ovnGitRef string,
 ) error {
 	ctx := context.Background()
-	ovnPath, err := EnsureOVNKubernetesSource(cmdExec)
+	ovnPath, err := EnsureOVNKubernetesSource(cmdExec, cfg.OVNKubernetesPath)
 	if err != nil {
 		return fmt.Errorf("failed to ensure OVN-Kubernetes source: %w", err)
 	}
@@ -630,10 +652,11 @@ func BuildOVNKubernetesImageWithEngine(
 	// build context; without this, docs/, test/, .github/, helm/, etc. are
 	// included unnecessarily. Any change in those directories would also
 	// invalidate the COPY layer cache and trigger a full Go rebuild.
-	if err := writeDockerignore(cmdExec, ovnPath); err != nil {
+	restoreDockerignore, err := writeDockerignore(cmdExec, ovnPath)
+	if err != nil {
 		log.Warn("Warning: failed to write .dockerignore, build may be slower: %v", err)
 	}
-	defer cleanupDockerignore(cmdExec, ovnPath)
+	defer restoreDockerignore()
 
 	// Detect architecture from the executor's target system.
 	targetArch, err := cmdExec.GetArchitecture()
@@ -825,14 +848,33 @@ func getGoBuildCacheDir() (string, error) {
 	return dir, nil
 }
 
-// writeDockerignore writes a .dockerignore file to the build context directory.
-// This excludes directories that are not needed for the container build, which
-// reduces the build context size and prevents unrelated file changes from
-// invalidating Docker's layer cache for the COPY instruction.
-func writeDockerignore(cmdExec platform.CommandExecutor, buildContextDir string) error {
-	// Only exclude directories that are NOT needed by Dockerfile.fedora:
-	//   - The build needs: go-controller/ (source + vendor), dist/ (Makefile, scripts)
-	//   - Everything else is documentation, tests, CI config, etc.
+// writeDockerignore writes a .dockerignore file to the build context directory
+// and returns a restore function that undoes the change. If a .dockerignore
+// already exists its content is saved and restored on cleanup; otherwise the
+// file is removed. The returned function is always safe to call (never nil).
+func writeDockerignore(cmdExec platform.CommandExecutor, buildContextDir string) (restore func(), err error) {
+	dockerignorePath := filepath.Join(buildContextDir, ".dockerignore")
+
+	// Snapshot any pre-existing file so we can restore it later.
+	var hadOriginal bool
+	var originalContent []byte
+	if existing, readErr := cmdExec.ReadFile(dockerignorePath); readErr == nil {
+		hadOriginal = true
+		originalContent = existing
+	}
+
+	restore = func() {
+		if hadOriginal {
+			if writeErr := cmdExec.WriteFile(dockerignorePath, originalContent, 0644); writeErr != nil {
+				log.Debug("Note: failed to restore original .dockerignore at %s: %v", dockerignorePath, writeErr)
+			}
+		} else {
+			if removeErr := cmdExec.RemoveAll(dockerignorePath); removeErr != nil {
+				log.Debug("Note: failed to remove .dockerignore at %s: %v", dockerignorePath, removeErr)
+			}
+		}
+	}
+
 	content := strings.Join([]string{
 		"# Auto-generated by dpu-sim to speed up docker builds.",
 		"# Excludes files not needed by Dockerfile.fedora so the COPY layer",
@@ -851,17 +893,8 @@ func writeDockerignore(cmdExec platform.CommandExecutor, buildContextDir string)
 		"",
 	}, "\n")
 
-	dockerignorePath := filepath.Join(buildContextDir, ".dockerignore")
-	return cmdExec.WriteFile(dockerignorePath, []byte(content), 0644)
-}
-
-// cleanupDockerignore removes the .dockerignore written by writeDockerignore.
-// This keeps the submodule directory clean after the build.
-func cleanupDockerignore(cmdExec platform.CommandExecutor, buildContextDir string) {
-	dockerignorePath := filepath.Join(buildContextDir, ".dockerignore")
-	if err := cmdExec.RemoveAll(dockerignorePath); err != nil {
-		log.Debug("Note: failed to remove .dockerignore at %s: %v", dockerignorePath, err)
-	}
+	err = cmdExec.WriteFile(dockerignorePath, []byte(content), 0644)
+	return restore, err
 }
 
 // resolveGitRef resolves a git ref (branch, tag, or commit) to a full SHA using ls-remote.
@@ -1127,12 +1160,12 @@ func (m *CNIManager) installOVNKubernetesDaemonset(clusterName string, k8sIP str
 		return fmt.Errorf("failed to patch CoreDNS: %w", err)
 	}
 
-	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec)
+	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec, m.config.OVNKubernetesPath)
 	if err != nil {
 		return fmt.Errorf("failed to ensure OVN-Kubernetes source: %w", err)
 	}
 
-	if err := BuildOVNKubernetesImage(m.cmdExec, DefaultOVNKubeImage, ""); err != nil {
+	if err := BuildOVNKubernetesImage(m.config, m.cmdExec, DefaultOVNKubeImage, ""); err != nil {
 		return fmt.Errorf("failed to build OVN-Kubernetes image: %w", err)
 	}
 
@@ -1355,7 +1388,7 @@ func (m *CNIManager) applyOVNKubernetesManifests(ovnPath string, clusterName str
 func (m *CNIManager) redeployOVNKubernetesDaemonset(clusterName string) error { //nolint:unused
 	log.Info("Redeploying OVN-Kubernetes on cluster %s...", clusterName)
 
-	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec)
+	ovnKPath, err := EnsureOVNKubernetesSource(m.cmdExec, m.config.OVNKubernetesPath)
 	if err != nil {
 		return fmt.Errorf("failed to ensure OVN-Kubernetes source: %w", err)
 	}

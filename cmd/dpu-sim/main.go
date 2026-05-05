@@ -22,8 +22,9 @@ import (
 
 var (
 	// Global flags
-	configPath string
-	logLevel   string
+	configPath        string
+	logLevel          string
+	ovnKubernetesPath string
 
 	// Root command flags
 	skipDeps    bool
@@ -55,6 +56,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "config.yaml", "Path to configuration file")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info",
 		fmt.Sprintf("Log level (%s)", strings.Join(log.ValidLevels(), ", ")))
+	rootCmd.PersistentFlags().StringVar(&ovnKubernetesPath, "ovn-kubernetes-path", "",
+		"Path to an external ovn-kubernetes source tree (overrides the git submodule)")
 
 	// Root command flags
 	rootCmd.Flags().BoolVar(&cleanupOnly, "cleanup", false, "Only cleanup existing resources, do not deploy")
@@ -83,6 +86,7 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
+	cfg.OVNKubernetesPath = ovnKubernetesPath
 
 	// Create registry manager once if configured; nil otherwise.
 	localExec := platform.NewLocalExecutor()
@@ -95,7 +99,7 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	var buildCNIImage registry.BuildFunc
 	if cfg.IsRegistryEnabled() {
 		regMgr = registry.NewRegistryManagerWithRuntime(cfg, localExec, engine)
-		buildCNIImage = cni.BuildCNIImageWithRuntime(localExec, engine)
+		buildCNIImage = cni.BuildCNIImageWithRuntime(cfg, localExec, engine)
 	}
 
 	// Handle rebuild CNI image(s) and redeploy onto each cluster
