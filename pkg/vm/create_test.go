@@ -7,7 +7,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 )
 
 func TestNvramPathForTemplatePreservesExtension(t *testing.T) {

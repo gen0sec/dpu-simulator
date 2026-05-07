@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // DockerEngine is the Docker-backed Engine implementation.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 )
 
 // FlannelManifestURL is the URL for the Flannel CNI manifest

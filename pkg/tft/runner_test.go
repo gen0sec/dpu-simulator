@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"

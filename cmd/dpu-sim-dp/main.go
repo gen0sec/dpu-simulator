@@ -15,7 +15,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/wizhao/dpu-sim/pkg/deviceplugin"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/deviceplugin"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )

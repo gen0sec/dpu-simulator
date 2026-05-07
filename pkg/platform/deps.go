@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 )
 
 // ensureLocalBinInPath adds ~/.local/bin to PATH if not already present

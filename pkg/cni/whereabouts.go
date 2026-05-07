@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 const (

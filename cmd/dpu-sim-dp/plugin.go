@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/deviceplugin"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/deviceplugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/klog/v2"

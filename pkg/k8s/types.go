@@ -1,7 +1,7 @@
 package k8s
 
 import (
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"

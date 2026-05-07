@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/wizhao/dpu-sim/lib/dpusim"
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/lib/dpusim"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 
 	"gopkg.in/yaml.v3"
 )

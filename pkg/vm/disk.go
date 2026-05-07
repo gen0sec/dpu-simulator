@@ -12,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/network"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/network"
 	oras "oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/file"

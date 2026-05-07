@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 )
 
 func TestLocalExecutor_Execute(t *testing.T) {

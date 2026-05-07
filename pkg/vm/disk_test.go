@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // TestEnsureCloudImageUsesOCIRef verifies EnsureCloudImage delegates to the

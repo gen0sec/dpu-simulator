@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wizhao/dpu-sim/pkg/cni"
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/containerengine"
-	"github.com/wizhao/dpu-sim/pkg/deviceplugin"
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/cni"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/containerengine"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/deviceplugin"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // BuildAndLoadImagesFromRegistryConfig builds images declared under registry.containers

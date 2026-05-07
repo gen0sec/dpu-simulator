@@ -8,7 +8,7 @@ import (
 
 	"libvirt.org/go/libvirt"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 )
 
 // GetVMMgmtIP retrieves the management network IP address of a VM.

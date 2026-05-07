@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

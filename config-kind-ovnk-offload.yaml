@@ -76,6 +76,7 @@ tft:
       - name: "Connection_1"
         type: "iperf-tcp"
         instances: 1
+        reverse: false
         server:
           - name: "dpu-sim-host-worker"
             persistent: "false"
