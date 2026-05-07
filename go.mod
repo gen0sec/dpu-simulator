@@ -6,6 +6,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	github.com/wizhao/dpu-sim/lib/dpusim v0.0.0
 	go.yaml.in/yaml/v2 v2.4.3
 	golang.org/x/crypto v0.47.0
 	golang.org/x/sync v0.19.0
@@ -20,6 +21,8 @@ require (
 	oras.land/oras-go/v2 v2.6.0
 	sigs.k8s.io/kind v0.31.0
 )
+
+replace github.com/wizhao/dpu-sim/lib/dpusim => ./lib/dpusim
 
 require (
 	al.essio.dev/pkg/shellescape v1.5.1 // indirect

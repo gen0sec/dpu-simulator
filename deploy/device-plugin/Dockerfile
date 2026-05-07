@@ -1,6 +1,8 @@
 FROM golang:1.25 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
+# Root go.mod replaces lib/dpusim with ./lib/dpusim; copy it before go mod download.
+COPY lib/dpusim ./lib/dpusim/
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /dpu-sim-dp ./cmd/dpu-sim-dp

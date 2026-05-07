@@ -1,7 +1,7 @@
-// Package dpusimlib provides shared constants for the DPU simulation
-// environment. Both dpu-sim itself and OVN-Kubernetes import this package
+// Package dpusim provides shared constants for the DPU simulation
+// environment. Both dpu-sim itself and OVN-Kubernetes import this module
 // so naming conventions stay in sync.
-package dpusimlib
+package dpusim
 
 import (
 	"fmt"

@@ -14,15 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/dpusimlib"
+	"github.com/wizhao/dpu-sim/lib/dpusim"
 	"github.com/wizhao/dpu-sim/pkg/platform"
 )
 
-// Re-export dpusimlib constants so existing callers continue to compile.
 const (
-	MacOUI        = dpusimlib.MacOUI
-	HostDataIfFmt = dpusimlib.HostDataIfFmt
-	DPUDataIfFmt  = dpusimlib.DPUDataIfFmt
+	MacOUI        = dpusim.MacOUI
+	HostDataIfFmt = dpusim.HostDataIfFmt
+	DPUDataIfFmt  = dpusim.DPUDataIfFmt
 )
 
 // GenerateMACForHostToDpu returns a deterministic MAC for a host-to-DPU data interface.
@@ -30,7 +29,7 @@ const (
 // Hash is over nodeName+role ("host" or "dpu"); the index is the last octet so each pair has a unique MAC.
 func GenerateMACForHostToDpu(nodeName, role string, index int) string {
 	h := sha256.Sum256([]byte(nodeName + "\x00" + role))
-	return fmt.Sprintf("%s:%02x:%02x:%02x", dpusimlib.MacOUI, h[0], h[1], index&0xff)
+	return fmt.Sprintf("%s:%02x:%02x:%02x", dpusim.MacOUI, h[0], h[1], index&0xff)
 }
 
 // GetRegexForHostDataIf returns a regex that matches the host-to-DPU interface names.
