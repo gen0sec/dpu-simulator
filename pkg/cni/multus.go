@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/deviceplugin"
-	"github.com/wizhao/dpu-sim/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/deviceplugin"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
 )
 
 // MultusManifestURL is the URL for the Multus CNI manifest

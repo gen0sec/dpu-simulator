@@ -3,8 +3,8 @@ package cni
 import (
 	"testing"
 
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 	"github.com/stretchr/testify/require"
-	"github.com/wizhao/dpu-sim/pkg/config"
 )
 
 func TestResolveAddonInstallOrderPassthroughWithoutWhereaboutsAddon(t *testing.T) {

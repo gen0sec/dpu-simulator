@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 )
 
 func TestNewClient(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/wizhao/dpu-sim/pkg/network"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/network"
 )
 
 // GenerateMACForNetwork returns a deterministic MAC for a VM's network interface (mgmt, k8s, etc.).

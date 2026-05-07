@@ -3,10 +3,10 @@ package requirements
 import (
 	"fmt"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/containerengine"
-	"github.com/wizhao/dpu-sim/pkg/linux"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/containerengine"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/linux"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // EnsureDependencies checks and installs all dpu-sim dependencies on the local machine

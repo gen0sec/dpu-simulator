@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/network"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/network"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // NetworkExists checks if a network exists

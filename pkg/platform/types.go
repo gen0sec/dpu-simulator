@@ -1,7 +1,7 @@
 package platform
 
 import (
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 )
 
 // Architecture represents a CPU architecture

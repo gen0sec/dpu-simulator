@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/linux"
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/network"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/linux"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/network"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // InstallKubernetes installs Kubernetes on a machine (baremetal or VM)

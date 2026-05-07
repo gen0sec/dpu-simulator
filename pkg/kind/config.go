@@ -5,7 +5,7 @@ import (
 
 	"sigs.k8s.io/kind/pkg/apis/config/v1alpha4"
 
-	"github.com/wizhao/dpu-sim/pkg/config"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 )
 
 // Node label used to identify the config "name" since Kind does not support node renaming.

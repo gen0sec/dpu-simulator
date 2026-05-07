@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/pkg/containerengine"
-	"github.com/wizhao/dpu-sim/pkg/k8s"
-	"github.com/wizhao/dpu-sim/pkg/log"
-	"github.com/wizhao/dpu-sim/pkg/platform"
-	"github.com/wizhao/dpu-sim/pkg/registry"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/containerengine"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/k8s"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/registry"
 )
 
 const (

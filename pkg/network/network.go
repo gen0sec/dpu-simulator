@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wizhao/dpu-sim/lib/dpusim"
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/lib/dpusim"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 const (

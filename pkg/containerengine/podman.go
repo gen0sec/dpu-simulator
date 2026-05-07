@@ -3,7 +3,7 @@ package containerengine
 import (
 	"context"
 
-	"github.com/wizhao/dpu-sim/pkg/platform"
+	"github.com/ovn-kubernetes/dpu-simulator/pkg/platform"
 )
 
 // PodmanEngine is the Podman-backed Engine implementation.
