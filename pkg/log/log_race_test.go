@@ -11,7 +11,7 @@ import (
 // and freeing it before the call to Fprint.
 // Run with: go test -race -run TestConcurrentLogWritesRace ./pkg/log/
 func TestConcurrentLogWritesRace(t *testing.T) {
-	var buf bytes.Buffer    // contended buffer
+	var buf bytes.Buffer // contended buffer
 	logger := New(LevelDebug, &buf)
 
 	const goroutines = 8
