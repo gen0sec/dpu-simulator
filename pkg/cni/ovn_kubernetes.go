@@ -13,6 +13,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
@@ -204,6 +205,14 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 		}
 	}
 
+	if !m.config.ShouldInstallOVNKubernetes() {
+		if err := m.writeOVNKubernetesHelmValues(mode, clusterName, ovnImage, false); err != nil {
+			return fmt.Errorf("failed to write OVN-Kubernetes Helm values: %w", err)
+		}
+		log.Info("✓ OVN-Kubernetes Helm install skipped for cluster %s (mode=%s); generated values instead", clusterName, mode)
+		return nil
+	}
+
 	if err := m.runHelmInstall(mode, clusterName, ovnKPath, apiServerURL, podCIDR, serviceCIDR, ovnImage); err != nil {
 		return fmt.Errorf("failed to run helm install: %w", err)
 	}
@@ -244,11 +253,9 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 //   - DPU:      values-single-node-zone-dpu.yaml, global.dpuImage.*, host credentials
 func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, apiServerURL, podCIDR, serviceCIDR, ovnImage string) error {
 	chartPath := filepath.Join(ovnkRepoPath, "helm", "ovn-kubernetes")
-	imageRepo, imageTag := splitImageRef(ovnImage)
-
-	pullPolicy := "Always"
-	if m.config.IsKindMode() && !m.config.IsRegistryEnabled() {
-		pullPolicy = "IfNotPresent"
+	overrides, err := m.ovnkHelmOverrides(mode, clusterName, ovnImage, true)
+	if err != nil {
+		return err
 	}
 
 	args := []string{"install", "ovn-kubernetes", "."}
@@ -261,9 +268,6 @@ func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, ap
 			"--set", fmt.Sprintf("podNetwork=%s", podCIDR),
 			"--set", fmt.Sprintf("serviceNetwork=%s", serviceCIDR),
 			"--set", "mtu=1400",
-			"--set", fmt.Sprintf("global.image.repository=%s", imageRepo),
-			"--set", fmt.Sprintf("global.image.tag=%s", imageTag),
-			"--set", fmt.Sprintf("global.image.pullPolicy=%s", pullPolicy),
 			"--set", "global.enableAdminNetworkPolicy=true",
 			"--set", "global.enableEgressIp=true",
 			"--set", "global.egressIpHealthCheckPort=9107",
@@ -272,55 +276,21 @@ func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, ap
 			"--set", "global.enableEgressService=true",
 			"--set", "global.enableMultiExternalGateway=true",
 			"--set", "global.enablePersistentIPs=true",
-			"--set", "tags.ovs-node=false",
 		)
 
-		switch mode {
-		case ovnkModeDPUHost:
-			dpuHostMgmtPort := m.config.DPUHostManagementPortNetDevName()
-			dpuHostGw := m.config.DPUHostGatewayInterface()
-			args = append(args,
-				"--set", "tags.ovnkube-node-dpu-host=true",
-				"--set", "global.enableOvnKubeIdentity=false",
-				"--set", fmt.Sprintf("ovnkube-node-dpu-host.nodeMgmtPortNetdev=%s", dpuHostMgmtPort),
-				"--set", fmt.Sprintf("ovnkube-node-dpu-host.gatewayOpts=--gateway-interface=%s", dpuHostGw),
-				"--set", "global.simulateDpu=true",
-			)
-		case ovnkModeFull:
-			args = append(args,
-				"--set", "global.enableOvnKubeIdentity=true",
+		if mode == ovnkModeFull {
+			overrides = append(overrides,
+				helmValue{key: "tags.ovs-node", value: false},
+				helmValue{key: "global.enableOvnKubeIdentity", value: true},
+				helmValue{key: "global.gatewayOpts", value: fmt.Sprintf("--gateway-interface=%s", m.config.GatewayInterfaces(clusterName))},
 			)
 		}
 	case ovnkModeDPU:
-		creds, err := m.getDPUHostClusterCredentials()
-		if err != nil {
-			return fmt.Errorf("failed to get DPU host cluster credentials: %w", err)
-		}
-
-		dpuHostGatewayRepresentorInterface := m.config.DPUHostGatewayRepresentorInterface()
-
 		args = append(args,
 			"-f", "values-single-node-zone-dpu.yaml",
-			"--set", "global.enableOvnKubeIdentity=false",
-			"--set", fmt.Sprintf("global.dpuImage.repository=%s", imageRepo),
-			"--set", fmt.Sprintf("global.dpuImage.tag=%s", imageTag),
-			"--set", fmt.Sprintf("global.dpuImage.pullPolicy=%s", pullPolicy),
-			"--set", fmt.Sprintf("global.dpuHostClusterK8sAPIServer=%s", creds.APIServer),
-			"--set", fmt.Sprintf("global.dpuHostClusterK8sToken=%s", creds.Token),
-			"--set", fmt.Sprintf("global.dpuHostClusterK8sCACertData=%s", creds.CACert),
-			"--set", fmt.Sprintf("global.dpuHostClusterNetworkCIDR=%s", creds.PodCIDR),
-			"--set", fmt.Sprintf("global.dpuHostClusterServiceCIDR=%s", creds.ServiceCIDR),
-			"--set", "global.mtu=1400",
-			"--set", "tags.ovs-node=false",
-			"--set", "global.simulateDpu=true",
-			"--set", fmt.Sprintf("global.dpuHostGatewayRepresentorInterface=%s", dpuHostGatewayRepresentorInterface),
 		)
 	}
-
-	gatewayIf := m.config.GatewayInterfaces(clusterName)
-	args = append(args,
-		"--set", fmt.Sprintf("global.gatewayOpts=--gateway-interface=%s", gatewayIf),
-	)
+	args = appendHelmSetArgs(args, overrides)
 
 	if m.kubeconfigPath != "" {
 		args = append(args, "--kubeconfig", m.kubeconfigPath)
@@ -981,7 +951,7 @@ func (m *CNIManager) createDPUAccessSecret() error {
 	}
 
 	_, err := m.k8sClient.Clientset().CoreV1().Secrets("ovn-kubernetes").Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
+	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create DPU access secret: %w", err)
 	}
 
@@ -1000,6 +970,12 @@ func (m *CNIManager) createDPUAccessSecret() error {
 	}
 
 	return fmt.Errorf("timed out waiting for DPU access secret to be populated")
+}
+
+// CreateOVNKubernetesDPUAccessSecret provisions the host-cluster service
+// account token used by OVN-Kubernetes pods running on the DPU cluster.
+func (m *CNIManager) CreateOVNKubernetesDPUAccessSecret() error {
+	return m.createDPUAccessSecret()
 }
 
 // getDPUHostClusterCredentials retrieves the service account token and CA
@@ -1060,10 +1036,9 @@ func (m *CNIManager) getDPUHostClusterCredentials() (*DPUHostCredentials, error)
 		apiServerURL = hostClient.GetAPIServerURL()
 	}
 
-	// Pod CIDR in the format expected by OVN-K DPU: "CIDR/perNodePrefix"
-	podCIDR := hostClusterCfg.PodCIDR
-	if !strings.Contains(podCIDR, "/24") || strings.Count(podCIDR, "/") < 2 {
-		podCIDR = podCIDR + "/24"
+	podCIDR, err := podCIDRWithPerNodePrefix(hostClusterCfg.PodCIDR)
+	if err != nil {
+		return nil, err
 	}
 
 	credentials := &DPUHostCredentials{
