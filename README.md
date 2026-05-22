@@ -890,6 +890,69 @@ $ kubectl get nodes
 $ kubectl get pods -A
 ```
 
+### OVN-Kubernetes Values-Only Mode
+
+Use `--ovnk-mode values-only` when you want dpu-sim to create the VM or Kind
+DPU environment but leave the OVN-Kubernetes Helm install to another workflow.
+In this mode dpu-sim still creates the clusters, host-to-DPU links, node labels,
+DPU OVS setup, generated images, addons, and device plugin resources, but it
+stops before installing OVN-Kubernetes.
+
+```bash
+$ ./bin/dpu-sim \
+    --config config-kind-ovnk-offload.yaml \
+    --ovnk-mode values-only
+```
+
+dpu-sim writes DPU-specific Helm values under `kubeconfig/helm-values/`, for
+example:
+
+```text
+kubeconfig/helm-values/dpu-sim-host-ovn-kubernetes-dpu-host-values.yaml
+kubeconfig/helm-values/dpu-sim-dpu-ovn-kubernetes-dpu-values.yaml
+```
+
+Use these files as the last values file in your OVN-Kubernetes Helm command so
+the DPU-specific settings override earlier defaults:
+
+```bash
+$ kubectl --kubeconfig kubeconfig/dpu-sim-host.kubeconfig apply \
+    -f https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/v0.1.5/config/crd/experimental/policy.networking.k8s.io_adminnetworkpolicies.yaml
+
+$ kubectl --kubeconfig kubeconfig/dpu-sim-host.kubeconfig apply \
+    -f https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/v0.1.5/config/crd/experimental/policy.networking.k8s.io_baselineadminnetworkpolicies.yaml
+
+$ helm upgrade --install ovn-kubernetes /path/to/ovn-kubernetes/helm/ovn-kubernetes \
+    --kubeconfig kubeconfig/dpu-sim-host.kubeconfig \
+    -f /path/to/your/normal-values.yaml \
+    -f kubeconfig/helm-values/dpu-sim-host-ovn-kubernetes-dpu-host-values.yaml
+```
+
+Helm installs the OVN-Kubernetes CRDs bundled with the chart on fresh installs.
+AdminNetworkPolicy and BaselineAdminNetworkPolicy are external Network Policy
+API CRDs, so values-only users must apply them separately when admin network
+policy is enabled. Make sure your normal values also set
+`global.enableAdminNetworkPolicy=true` if you need ANP/BANP support.
+
+After the host-side OVN-Kubernetes install exists, create host access resources
+and regenerate DPU values if DPU-side components need host-cluster credentials:
+
+```bash
+$ ./bin/dpu-sim ovnk host-access \
+    --config config-kind-ovnk-offload.yaml \
+    --cluster dpu-sim-host
+
+$ ./bin/dpu-sim ovnk values \
+    --config config-kind-ovnk-offload.yaml \
+    --cluster dpu-sim-dpu \
+    --require-host-credentials
+```
+
+For BGP/FRR-K8S use cases, the DPU values command also writes
+`kubeconfig/helm-values/<dpu-cluster>-frr-k8s.env` and a host kubeconfig for
+DPU-side FRR-K8S. Source that environment file before running a compatible FRR
+or OVN-Kubernetes development workflow.
+
 ### VM/Kind Mode Usage (OVN-Kubernetes DPU offload case)
 
 #### Step 1: Ensuring dpu-sim is compiled
