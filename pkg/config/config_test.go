@@ -234,6 +234,158 @@ func TestGetKindNodeCounts(t *testing.T) {
 	assert.Equal(t, 1, cfg.GetKindWorkerCount("cluster-b"))
 }
 
+func TestDPUHostManagementPortVFsCount(t *testing.T) {
+	tests := []struct {
+		name     string
+		network  NetworkConfig
+		expected int
+	}{
+		{
+			name:     "defaults to two when enough simulated VFs are available",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 16},
+			expected: 2,
+		},
+		{
+			name:     "uses configured count",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 16, MgmtPortVFsCount: 4},
+			expected: 4,
+		},
+		{
+			name:     "falls back to one when only one resource VF is available",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 3},
+			expected: 1,
+		},
+		{
+			name:     "falls back to zero when no resource VFs are available",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 2},
+			expected: 0,
+		},
+		{
+			name:     "clamps default to zero when num pairs is below reserved channels",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 1},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Networks: []NetworkConfig{tt.network}}
+			require.NoError(t, cfg.validateAndSetDefaults())
+			assert.Equal(t, tt.expected, cfg.DPUHostManagementPortVFsCount())
+		})
+	}
+}
+
+func TestValidateHostToDpuManagementPortVFsCount(t *testing.T) {
+	tests := []struct {
+		name    string
+		network NetworkConfig
+	}{
+		{
+			name:    "configured count exceeds available VFs",
+			network: NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 4, MgmtPortVFsCount: 3},
+		},
+		{
+			name:    "configured count requires unavailable VF",
+			network: NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 2, MgmtPortVFsCount: 1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Networks: []NetworkConfig{tt.network}}
+			err := cfg.validateAndSetDefaults()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "mgmt_port_vfs_count")
+		})
+	}
+}
+
+func TestDPUHostGatewaySubnet(t *testing.T) {
+	tests := []struct {
+		name     string
+		network  NetworkConfig
+		expected string
+	}{
+		{
+			name:     "defaults gateway subnet",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 16},
+			expected: "172.30.0.0/24",
+		},
+		{
+			name:     "uses configured gateway subnet",
+			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 16, GatewaySubnet: "172.31.0.0/24"},
+			expected: "172.31.0.0/24",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Networks: []NetworkConfig{tt.network}}
+			require.NoError(t, cfg.validateAndSetDefaults())
+			assert.Equal(t, tt.expected, cfg.DPUHostGatewaySubnet())
+		})
+	}
+}
+
+func TestValidateHostToDpuGatewaySubnet(t *testing.T) {
+	cfg := Config{
+		Networks: []NetworkConfig{
+			{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 4, GatewaySubnet: "not-a-cidr"},
+		},
+	}
+
+	err := cfg.validateAndSetDefaults()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "gateway_subnet")
+}
+
+func TestValidateHostToDpuGatewaySubnetCapacity(t *testing.T) {
+	cfg := Config{
+		Networks: []NetworkConfig{
+			{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 4, GatewaySubnet: "172.31.0.0/30"},
+		},
+		Kubernetes: KubernetesConfig{
+			OffloadDPU: true,
+			Clusters: []ClusterConfig{
+				{Name: "host", CNI: CNIOVNKubernetes},
+				{Name: "dpu", CNI: CNIKindnet},
+			},
+		},
+		Kind: &KindConfig{Nodes: []KindNodeConfig{
+			{Name: "host-1", Type: HostType, K8sCluster: "host", K8sRole: "worker"},
+			{Name: "dpu-1", Type: DpuType, K8sCluster: "dpu", K8sRole: "worker", Host: "host-1"},
+		}},
+	}
+
+	err := cfg.validateAndSetDefaults()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires at least 3")
+}
+
+func TestKindDPUGatewayOpts(t *testing.T) {
+	cfg := Config{
+		Networks: []NetworkConfig{
+			{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 16, GatewaySubnet: "172.31.0.0/24"},
+		},
+		Kubernetes: KubernetesConfig{
+			OffloadDPU: true,
+			Clusters: []ClusterConfig{
+				{Name: "host", CNI: CNIOVNKubernetes},
+				{Name: "dpu", CNI: CNIKindnet},
+			},
+		},
+		Kind: &KindConfig{Nodes: []KindNodeConfig{
+			{Name: "host-1", Type: HostType, K8sCluster: "host", K8sRole: "worker"},
+			{Name: "dpu-1", Type: DpuType, K8sCluster: "dpu", K8sRole: "worker", Host: "host-1"},
+		}},
+	}
+	require.NoError(t, cfg.validateAndSetDefaults())
+
+	assert.Equal(t, "--gateway-interface=eth1 --gateway-router-subnet=172.31.0.0/24", cfg.GatewayOpts("dpu"))
+	assert.Equal(t, "--gateway-interface=eth0", cfg.GatewayOpts("host"))
+}
+
 func TestIsKindMode(t *testing.T) {
 	vmConfig := Config{
 		VMs: []VMConfig{{Name: "vm1"}},

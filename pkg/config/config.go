@@ -18,6 +18,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultDPUHostMgmtPortVFsCount = 2
+	defaultDPUHostGatewaySubnet    = "172.30.0.0/24"
+	defaultKindDPUGatewayNetwork   = "dpu-sim-gateway"
+	defaultKindDPUGatewayInterface = "eth1"
+)
+
 // LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -35,6 +42,26 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// SetOVNKubernetesMode validates and stores how dpu-sim should handle
+// OVN-Kubernetes Helm deployment.
+func (c *Config) SetOVNKubernetesMode(mode string) error {
+	switch mode {
+	case "", OVNKubernetesModeInstall:
+		c.OVNKubernetesMode = OVNKubernetesModeInstall
+	case OVNKubernetesModeValuesOnly:
+		c.OVNKubernetesMode = OVNKubernetesModeValuesOnly
+	default:
+		return fmt.Errorf("unsupported OVN-Kubernetes mode %q, expected %q or %q", mode, OVNKubernetesModeInstall, OVNKubernetesModeValuesOnly)
+	}
+	return nil
+}
+
+// ShouldInstallOVNKubernetes returns true when dpu-sim should run Helm for
+// OVN-Kubernetes. The zero value preserves the historical install behavior.
+func (c *Config) ShouldInstallOVNKubernetes() bool {
+	return c.OVNKubernetesMode == "" || c.OVNKubernetesMode == OVNKubernetesModeInstall
 }
 
 // validate and set defaults checks that all mandatory fields in the configuration are set
@@ -82,12 +109,39 @@ func (c *Config) validateAndSetDefaults() error {
 			if c.Networks[i].NumPairs <= 0 {
 				c.Networks[i].NumPairs = 1
 			}
+			if c.Networks[i].GatewaySubnet == "" {
+				c.Networks[i].GatewaySubnet = defaultDPUHostGatewaySubnet
+			}
+			if err := validateIPv4CIDRCapacity(c.Networks[i].GatewaySubnet, c.kindDPUGatewaySubnetRequiredIPs()); err != nil {
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'gateway_subnet' must be a valid CIDR: %v", i, net.Name, err))
+			}
+			availableMgmtPortVFs := c.Networks[i].NumPairs - 2
+			if c.Networks[i].MgmtPortVFsCount > 0 && c.Networks[i].MgmtPortVFsCount > availableMgmtPortVFs {
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'mgmt_port_vfs_count' must be <= num_pairs-2 (%d) because eth0-0 and eth0-1 are reserved",
+					i, net.Name, availableMgmtPortVFs))
+			}
+			if c.Networks[i].MgmtPortVFsCount <= 0 {
+				defaultVal := defaultDPUHostMgmtPortVFs(c.Networks[i].NumPairs)
+				if defaultVal > availableMgmtPortVFs {
+					defaultVal = availableMgmtPortVFs
+				}
+				if defaultVal < 0 {
+					defaultVal = 0
+				}
+				c.Networks[i].MgmtPortVFsCount = defaultVal
+			}
 		} else {
 			if net.BridgeName == "" {
 				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'bridge_name' is required", i, net.Name))
 			}
 			if net.NumPairs > 0 {
 				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'num_pairs' is not allowed for type %s", i, net.Name, net.Type))
+			}
+			if net.MgmtPortVFsCount > 0 {
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'mgmt_port_vfs_count' is not allowed for type %s", i, net.Name, net.Type))
+			}
+			if net.GatewaySubnet != "" {
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'gateway_subnet' is not allowed for type %s", i, net.Name, net.Type))
 			}
 			if c.Networks[i].Mode == "" {
 				c.Networks[i].Mode = "nat"
@@ -878,6 +932,59 @@ func (c *Config) GetHostToDpuNumPairs() int {
 	return net.NumPairs
 }
 
+// DPUHostManagementPortVFsCount returns how many simulated VFs ovnkube-node
+// should request for default and primary UDN management ports.
+func (c *Config) DPUHostManagementPortVFsCount() int {
+	net := c.GetHostToDpuNetwork()
+	if net == nil {
+		return 1
+	}
+	return net.MgmtPortVFsCount
+}
+
+// DPUHostGatewaySubnet returns the subnet used for simulated DPU gateway
+// router addresses.
+func (c *Config) DPUHostGatewaySubnet() string {
+	net := c.GetHostToDpuNetwork()
+	if net == nil || net.GatewaySubnet == "" {
+		return defaultDPUHostGatewaySubnet
+	}
+	return net.GatewaySubnet
+}
+
+// DPUKindGatewayNetworkName returns the container network carrying simulated
+// DPU gateway traffic in Kind mode.
+func (c *Config) DPUKindGatewayNetworkName() string {
+	return defaultKindDPUGatewayNetwork
+}
+
+// kindDPUGatewaySubnetRequiredIPs returns the minimum usable IPs needed by the
+// DPU gateway container network. Docker/Podman consumes the first usable IP for
+// the bridge gateway, each DPU node consumes one IP when it connects to the
+// gateway network, and each paired host node gets one veth IP from the same
+// subnet for OVN-Kubernetes gateway traffic.
+func (c *Config) kindDPUGatewaySubnetRequiredIPs() int {
+	if !c.IsKindMode() || !c.IsOffloadDPU() {
+		return 0
+	}
+	pairs := c.GetHostDPUPairs("")
+	if len(pairs) == 0 {
+		return 0
+	}
+	return 1 + 2*len(pairs)
+}
+
+func defaultDPUHostMgmtPortVFs(numPairs int) int {
+	available := numPairs - 2
+	if available <= 0 {
+		return 0
+	}
+	if available < defaultDPUHostMgmtPortVFsCount {
+		return available
+	}
+	return defaultDPUHostMgmtPortVFsCount
+}
+
 // GetNetworkByName returns the network configuration by name
 func (c *Config) GetNetworkByName(name string) *NetworkConfig {
 	for i := range c.Networks {
@@ -1143,8 +1250,23 @@ func (c *Config) GatewayInterfaces(clusterName string) string {
 	gatewayIf := K8sNetworkName
 	if c.IsKindMode() {
 		gatewayIf = KindK8sNetworkName
+		if c.IsOffloadDPU() && c.IsDPUCluster(clusterName) {
+			gatewayIf = defaultKindDPUGatewayInterface
+		}
 	}
 	return gatewayIf
+}
+
+// GatewayOpts returns the OVN-Kubernetes gateway options for the given
+// cluster. In Kind DPU mode, OVN's gateway interface is on the simulator
+// gateway network, and the DPU host gateway subnet tells ovnkube how to derive
+// gateway router addresses for paired host nodes.
+func (c *Config) GatewayOpts(clusterName string) string {
+	opts := fmt.Sprintf("--gateway-interface=%s", c.GatewayInterfaces(clusterName))
+	if c.IsKindMode() && c.IsOffloadDPU() && c.IsDPUCluster(clusterName) {
+		opts = fmt.Sprintf("%s --gateway-router-subnet=%s", opts, c.DPUHostGatewaySubnet())
+	}
+	return opts
 }
 
 // DPUHostGatewayInterface returns the gateway interface name for DPU-Host mode

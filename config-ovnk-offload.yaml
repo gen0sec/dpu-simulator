@@ -33,6 +33,7 @@ networks:
   - name: "host-to-dpu-link"
     type: "HostToDpu"
     num_pairs: 16
+    mgmt_port_vfs_count: 3
     nic_model: "virtio"
 
 vms:
@@ -114,6 +115,8 @@ kubernetes:
   offload_dpu: true
   clusters:
     - name: "dpu-sim-host"
+      # OVN-Kubernetes DPU mode defaults host subnet allocation to /24, so
+      # this CIDR must be broader than /24 unless written as CIDR/hostPrefix.
       pod_cidr: "10.244.0.0/16"
       service_cidr: "10.245.0.0/16"
       cni: "ovn-kubernetes"

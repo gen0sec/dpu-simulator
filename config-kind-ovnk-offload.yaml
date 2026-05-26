@@ -10,6 +10,8 @@ networks:
   - name: "host-to-dpu-link"
     type: "HostToDpu"
     num_pairs: 16
+    gateway_subnet: "172.30.0.0/24"
+    mgmt_port_vfs_count: 3
 
 # Kind cluster configuration: one Kind cluster per kubernetes.clusters entry.
 # Node "name" is applied as a label (dpu-sim.org/node-name); Kind does not support node renaming.
@@ -45,6 +47,8 @@ kubernetes:
   offload_dpu: true
   clusters:
     - name: "dpu-sim-host"
+      # OVN-Kubernetes DPU mode defaults host subnet allocation to /24, so
+      # this CIDR must be broader than /24 unless written as CIDR/hostPrefix.
       pod_cidr: "10.244.0.0/16"
       service_cidr: "10.245.0.0/16"
       cni: "ovn-kubernetes"
