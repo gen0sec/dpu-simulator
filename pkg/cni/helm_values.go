@@ -88,16 +88,25 @@ func (m *CNIManager) ovnkHelmOverrides(mode ovnkMode, clusterName, ovnImage stri
 			helmValue{key: "tags.ovs-node", value: false},
 			helmValue{key: "tags.ovnkube-node-dpu-host", value: true},
 			helmValue{key: "tags.ovnkube-identity", value: false},
+			helmValue{key: "tags.ovnkube-control-plane", value: true},
+			helmValue{key: "tags.ovnkube-single-node-zone", value: true},
+			helmValue{key: "tags.ovnkube-node", value: false},
 			helmValue{key: "global.enableOvnKubeIdentity", value: false},
+			helmValue{key: "global.enableNetworkSegmentation", value: true},
 			helmValue{key: "global.simulateDpu", value: true},
 			helmValue{key: "global.gatewayOpts", value: m.config.GatewayOpts(clusterName)},
-			helmValue{key: "ovnkube-node-dpu-host.nodeMgmtPortNetdev", value: m.config.DPUHostManagementPortNetDevName()},
 			helmValue{key: "ovnkube-node-dpu-host.gatewayOpts", value: fmt.Sprintf("--gateway-interface=%s", m.config.DPUHostGatewayInterface())},
 		)
 		if includeDPUHostMgmtPortResource {
 			overrides = append(overrides,
-				helmValue{key: "ovnkube-node-dpu-host.mgmtPortVFResourceName", value: deviceplugin.VFResourceName},
+				helmValue{key: "ovnkube-single-node-zone.mgmtPortVFResourceName", value: ""},
+				helmValue{key: "ovnkube-single-node-zone.nodeMgmtPortNetdev", value: ""},
+				helmValue{key: "ovnkube-node-dpu-host.mgmtPortVFResourceName", value: deviceplugin.MgmtVFResourceName},
 				helmValue{key: "ovnkube-node-dpu-host.mgmtPortVFsCount", value: m.config.DPUHostManagementPortVFsCount()},
+			)
+		} else {
+			overrides = append(overrides,
+				helmValue{key: "ovnkube-node-dpu-host.nodeMgmtPortNetdev", value: m.config.DPUHostManagementPortNetDevName()},
 			)
 		}
 		return overrides, nil
@@ -105,8 +114,13 @@ func (m *CNIManager) ovnkHelmOverrides(mode ovnkMode, clusterName, ovnImage stri
 		overrides := imageHelmValues("global.dpuImage", imageRepo, imageTag, pullPolicy)
 		overrides = append(overrides,
 			helmValue{key: "tags.ovs-node", value: false},
+			helmValue{key: "tags.ovnkube-node-dpu-host", value: false},
 			helmValue{key: "tags.ovnkube-identity", value: false},
+			helmValue{key: "tags.ovnkube-control-plane", value: false},
+			helmValue{key: "tags.ovnkube-single-node-zone-dpu", value: true},
+			helmValue{key: "tags.ovnkube-node-dpu", value: false},
 			helmValue{key: "global.enableOvnKubeIdentity", value: false},
+			helmValue{key: "global.enableNetworkSegmentation", value: true},
 			helmValue{key: "global.simulateDpu", value: true},
 			helmValue{key: "global.gatewayOpts", value: m.config.GatewayOpts(clusterName)},
 			helmValue{key: "global.dpuHostGatewayRepresentorInterface", value: m.config.DPUHostGatewayRepresentorInterface()},
