@@ -14,6 +14,13 @@ import (
 func (m *KindManager) CleanupAll(cfg *config.Config) error {
 	errors := make([]string, 0)
 
+	if cfg.IsOffloadDPU() {
+		cmdExec := platform.NewLocalExecutor()
+		if err := m.cleanupDPUGatewayRouting(cmdExec); err != nil {
+			errors = append(errors, fmt.Sprintf("Failed to cleanup DPU gateway routing: %v", err))
+		}
+	}
+
 	for _, cluster := range cfg.Kubernetes.Clusters {
 		if err := m.DeleteCluster(cluster.Name); err != nil {
 			errors = append(errors, fmt.Sprintf("Failed to delete cluster %s: %v", cluster.Name, err))
@@ -40,5 +47,7 @@ func (m *KindManager) CleanupAll(cfg *config.Config) error {
 
 func isMissingContainerNetworkError(err error) bool {
 	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "no such network") || strings.Contains(errText, "network not found")
+	return strings.Contains(errText, "no such network") ||
+		strings.Contains(errText, "network not found") ||
+		(strings.Contains(errText, "network ") && strings.Contains(errText, " not found"))
 }
