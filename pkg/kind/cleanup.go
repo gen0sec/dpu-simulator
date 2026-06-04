@@ -40,5 +40,7 @@ func (m *KindManager) CleanupAll(cfg *config.Config) error {
 
 func isMissingContainerNetworkError(err error) bool {
 	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "no such network") || strings.Contains(errText, "network not found")
+	return strings.Contains(errText, "no such network") ||
+		strings.Contains(errText, "network not found") ||
+		(strings.Contains(errText, "network ") && strings.Contains(errText, " not found"))
 }
