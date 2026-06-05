@@ -109,11 +109,15 @@ func (c *Config) validateAndSetDefaults() error {
 			if err := validateIPv4CIDRCapacity(c.Networks[i].GatewaySubnet, c.kindDPUGatewaySubnetRequiredIPs()); err != nil {
 				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'gateway_subnet' must be a valid CIDR: %v", i, net.Name, err))
 			}
+			// One interface is the gateway (eth0-0); at least one must remain for pod VFs.
 			availableMgmtPortVFs := c.Networks[i].NumPairs - 2
 			if c.Networks[i].MgmtPortVFsCount > 0 && c.Networks[i].MgmtPortVFsCount > availableMgmtPortVFs {
-				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'mgmt_port_vfs_count' must be <= num_pairs-2 (%d) because eth0-0 and eth0-1 are reserved",
-					i, net.Name, availableMgmtPortVFs))
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'mgmt_port_vfs_count' must be <= num_pairs-2 (%d) because %s is reserved for the gateway and at least one VF must remain for pods",
+					i, net.Name, availableMgmtPortVFs, dpusim.HostGatewayInterface))
 			}
+			// When mgmt_port_vfs_count is omitted or non-positive, apply the default
+			// from num_pairs and clamp so eth0-0 stays gateway-only and one VF remains
+			// for pods.
 			if c.Networks[i].MgmtPortVFsCount <= 0 {
 				defaultVal := defaultDPUHostMgmtPortVFs(c.Networks[i].NumPairs)
 				if defaultVal > availableMgmtPortVFs {
@@ -123,6 +127,10 @@ func (c *Config) validateAndSetDefaults() error {
 					defaultVal = 0
 				}
 				c.Networks[i].MgmtPortVFsCount = defaultVal
+			}
+			if c.IsOffloadDPU() && c.Networks[i].MgmtPortVFsCount < 1 {
+				errors = append(errors, fmt.Sprintf("networks[%d] (%s): 'mgmt_port_vfs_count' must be >= 1 when kubernetes.offload_dpu is enabled (%s is gateway-only; increase num_pairs to at least 3)",
+					i, net.Name, dpusim.HostGatewayInterface))
 			}
 		} else {
 			if net.BridgeName == "" {
@@ -983,6 +991,10 @@ func (c *Config) kindDPUGatewaySubnetRequiredIPs() int {
 	return 1 + 2*len(pairs)
 }
 
+// defaultDPUHostMgmtPortVFs returns the mgmt_port_vfs_count applied when the
+// HostToDpu network omits that field. It caps at DefaultMgmtPortVFsCount but
+// never exceeds numPairs-2, reserving eth0-0 for the gateway and at least one
+// eth0-* index for pod VFs. Returns 0 when numPairs is too small.
 func defaultDPUHostMgmtPortVFs(numPairs int) int {
 	available := numPairs - 2
 	if available <= 0 {
@@ -1293,7 +1305,9 @@ func (c *Config) DPUHostGatewayRepresentorInterface() string {
 	return dpusim.HostGatewayPeerInterface
 }
 
-// DPUHostManagementPortNetDevName returns the management port netdev name for DPU mode
+// DPUHostManagementPortNetDevName returns the legacy management-port netdev
+// (eth0-1) used when ovnkube-node is not configured to request mgmt VFs via
+// the device plugin resource pool.
 func (c *Config) DPUHostManagementPortNetDevName() string {
 	return dpusim.MgmtPortNetDevName
 }

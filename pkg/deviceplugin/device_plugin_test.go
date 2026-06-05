@@ -7,6 +7,7 @@ import (
 	"github.com/ovn-kubernetes/dpu-simulator/lib/dpusim"
 	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestBuildResourcePools verifies mgmt and pod VF pools partition host data
@@ -52,7 +53,8 @@ func TestBuildResourcePools(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pools := BuildResourcePools(tt.mgmtCount)
+			pools, err := BuildResourcePools(tt.mgmtCount)
+			require.NoError(t, err)
 			assert.Len(t, pools, 2)
 
 			mgmtPool := pools[0]
@@ -85,29 +87,43 @@ func TestBuildResourcePools(t *testing.T) {
 	}
 }
 
-// TestBuildResourcePoolsInvalidCountUsesDefault checks that a non-positive value
-// mgmt_port_vfs_count falls back to DefaultMgmtPortVFsCount.
-func TestBuildResourcePoolsInvalidCountUsesDefault(t *testing.T) {
+// TestGatewayInterfaceExcludedFromPools verifies eth0-0 is never advertised by
+// either resource pool regardless of mgmt_port_vfs_count.
+func TestGatewayInterfaceExcludedFromPools(t *testing.T) {
 	t.Parallel()
 
-	pools := BuildResourcePools(0)
-	for i := 1; i <= config.DefaultMgmtPortVFsCount; i++ {
-		assert.True(t, pools[0].MatchesIface(dpusim.HostDataIf(i)))
+	gateway := dpusim.HostGatewayInterface
+	for _, mgmtCount := range []int{1, 2, 3, config.DefaultMgmtPortVFsCount} {
+		pools, err := BuildResourcePools(mgmtCount)
+		require.NoError(t, err)
+		for _, pool := range pools {
+			assert.False(t, pool.MatchesIface(gateway), "pool %s must not match %s", pool.ResourceName, gateway)
+		}
 	}
-	firstPodVF := dpusim.HostDataIf(config.DefaultMgmtPortVFsCount + 1)
-	assert.False(t, pools[0].MatchesIface(firstPodVF))
-	assert.True(t, pools[1].MatchesIface(firstPodVF))
 }
 
-// TestMgmtPortVFsCountFromEnv checks parsing of MGMT_PORT_VFS_COUNT, including
-// valid values and fallback to config.DefaultMgmtPortVFsCount when unset or invalid.
+func TestBuildResourcePoolsInvalidCountErrors(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildResourcePools(0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mgmt_port_vfs_count")
+}
+
+// TestMgmtPortVFsCountFromEnv checks parsing of MGMT_PORT_VFS_COUNT.
 func TestMgmtPortVFsCountFromEnv(t *testing.T) {
 	t.Setenv(MgmtPortVFsCountEnvVar, "5")
-	assert.Equal(t, 5, MgmtPortVFsCountFromEnv())
+	count, err := MgmtPortVFsCountFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 5, count)
 
 	t.Setenv(MgmtPortVFsCountEnvVar, "")
-	assert.Equal(t, config.DefaultMgmtPortVFsCount, MgmtPortVFsCountFromEnv())
+	_, err = MgmtPortVFsCountFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), MgmtPortVFsCountEnvVar)
 
 	t.Setenv(MgmtPortVFsCountEnvVar, "invalid")
-	assert.Equal(t, config.DefaultMgmtPortVFsCount, MgmtPortVFsCountFromEnv())
+	_, err = MgmtPortVFsCountFromEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), MgmtPortVFsCountEnvVar)
 }

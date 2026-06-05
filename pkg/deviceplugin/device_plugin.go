@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ovn-kubernetes/dpu-simulator/lib/dpusim"
-	"github.com/ovn-kubernetes/dpu-simulator/pkg/config"
 	"github.com/ovn-kubernetes/dpu-simulator/pkg/containerengine"
 	"github.com/ovn-kubernetes/dpu-simulator/pkg/k8s"
 	"github.com/ovn-kubernetes/dpu-simulator/pkg/log"
@@ -78,11 +77,13 @@ func (p ResourcePool) MatcherDescription() string {
 
 // BuildResourcePools returns mgmt and pod VF pools for the given management-port
 // VF count. Mgmt VFs are eth0-1 through eth0-N; pod VFs start at eth0-(N+1).
-// eth0-0 is reserved for the DPU gateway interface and is excluded from both pools.
-func BuildResourcePools(mgmtPortVFsCount int) []ResourcePool {
+// dpusim.HostGatewayInterface (eth0-0) is excluded from both pools.
+func BuildResourcePools(mgmtPortVFsCount int) ([]ResourcePool, error) {
 	if mgmtPortVFsCount < 1 {
-		mgmtPortVFsCount = config.DefaultMgmtPortVFsCount
+		return nil, fmt.Errorf("mgmt_port_vfs_count must be >= 1, got %d", mgmtPortVFsCount)
 	}
+	// Exclude the gateway interface (eth0-0) from the mgmt VF pool.
+	mgmtVFStart := dpusim.HostGatewayInterfaceIndex + 1
 	podVFStart := mgmtPortVFsCount + 1
 
 	return []ResourcePool{
@@ -90,8 +91,8 @@ func BuildResourcePools(mgmtPortVFsCount int) []ResourcePool {
 			ResourceName:         MgmtVFResourceName,
 			SocketName:           "dpusim-mgmtvf.sock",
 			EnvVarName:           "PCIDEVICE_DPUSIM_IO_MGMTVF",
-			matchesIface:         hostDataIfInRange(1, mgmtPortVFsCount),
-			hostDataIfIndexStart: 1,
+			matchesIface:         hostDataIfInRange(mgmtVFStart, mgmtPortVFsCount),
+			hostDataIfIndexStart: mgmtVFStart,
 			hostDataIfIndexEnd:   mgmtPortVFsCount,
 		},
 		{
@@ -101,13 +102,17 @@ func BuildResourcePools(mgmtPortVFsCount int) []ResourcePool {
 			matchesIface:         hostDataIfAtLeast(podVFStart),
 			hostDataIfIndexStart: podVFStart,
 		},
-	}
+	}, nil
 }
 
 // hostDataIfIndex parses a host-to-DPU data interface name (eth0-<index>) and
-// returns the trailing VF index. Non-host names and malformed values return false.
+// returns the trailing VF index. The gateway interface (eth0-0), non-host
+// names, and malformed values return false.
 func hostDataIfIndex(name string) (int, bool) {
-	if !strings.HasPrefix(name, "eth0-") {
+	if name == dpusim.HostGatewayInterface {
+		return 0, false
+	}
+	if !strings.HasPrefix(name, strings.TrimSuffix(dpusim.HostDataIfFmt, "%d")) {
 		return 0, false
 	}
 	m := dpusim.ReSimulationNetdevFunc.FindStringSubmatch(name)
@@ -115,7 +120,7 @@ func hostDataIfIndex(name string) (int, bool) {
 		return 0, false
 	}
 	idx, err := strconv.Atoi(m[2])
-	if err != nil {
+	if err != nil || idx <= dpusim.HostGatewayInterfaceIndex {
 		return 0, false
 	}
 	return idx, true
@@ -140,17 +145,16 @@ func hostDataIfAtLeast(start int) func(string) bool {
 }
 
 // MgmtPortVFsCountFromEnv reads MGMT_PORT_VFS_COUNT from the environment.
-// When unset or invalid it returns config.DefaultMgmtPortVFsCount.
-func MgmtPortVFsCountFromEnv() int {
+func MgmtPortVFsCountFromEnv() (int, error) {
 	raw := strings.TrimSpace(os.Getenv(MgmtPortVFsCountEnvVar))
 	if raw == "" {
-		return config.DefaultMgmtPortVFsCount
+		return 0, fmt.Errorf("%s is not set", MgmtPortVFsCountEnvVar)
 	}
 	count, err := strconv.Atoi(raw)
 	if err != nil || count < 1 {
-		return config.DefaultMgmtPortVFsCount
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", MgmtPortVFsCountEnvVar, raw)
 	}
-	return count
+	return count, nil
 }
 
 // BuildAndLoadImage builds the device plugin image and pushes it to the
@@ -217,7 +221,7 @@ func DeployDevicePlugin(k8sClient *k8s.K8sClient, imageRef string, mgmtPortVFsCo
 	}
 
 	if mgmtPortVFsCount < 1 {
-		mgmtPortVFsCount = config.DefaultMgmtPortVFsCount
+		return fmt.Errorf("mgmt_port_vfs_count must be >= 1, got %d", mgmtPortVFsCount)
 	}
 
 	manifest := string(manifestBytes)

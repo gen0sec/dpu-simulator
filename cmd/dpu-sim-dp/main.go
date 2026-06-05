@@ -25,8 +25,16 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	mgmtPortVFsCount := deviceplugin.MgmtPortVFsCountFromEnv()
-	pools := deviceplugin.BuildResourcePools(mgmtPortVFsCount)
+	mgmtPortVFsCount, err := deviceplugin.MgmtPortVFsCountFromEnv()
+	if err != nil {
+		klog.Errorf("%v", err)
+		os.Exit(1)
+	}
+	pools, err := deviceplugin.BuildResourcePools(mgmtPortVFsCount)
+	if err != nil {
+		klog.Errorf("Failed to build resource pools: %v", err)
+		os.Exit(1)
+	}
 	klog.Infof("Configured mgmt_port_vfs_count=%d", mgmtPortVFsCount)
 
 	for _, pool := range pools {

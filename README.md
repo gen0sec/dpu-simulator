@@ -215,7 +215,7 @@ Kind mode models the same **split host / DPU Kubernetes** idea as VM mode, but e
 - **One cluster per `kubernetes.clusters` entry**: dpu-sim builds a separate Kind cluster for each configured cluster name. Nodes are filtered by `k8s_cluster` when the Kind config is generated.
 - **Stable logical names**: Kind does not let you rename nodes, so dpu-sim applies the label **`dpu-sim.org/node-name=<config name>`** on each node. Use that label in `kubectl` to map a config `name` to the actual node object.
 - **In-cluster networking**: Nodes join the default Kind bridge; **`eth0`** is the primary interface Kind uses for the Kubernetes API and pod CNI plumbing. For custom CNIs, the default Kind CNI is disabled (`kindnet` is the exception); **kube-proxy** is turned off when the primary CNI is OVN-Kubernetes (OVN handles service routing).
-- **`HostToDpu` (`networks`)**: After clusters exist, dpu-sim creates **veth data channels** between paired host and DPU **containers** (pairs can span two Kind clusters). Per pair you get `num_pairs` links (e.g. `eth0-*` on the host node container and `rep0-*` on the DPU side). With **`kubernetes.offload_dpu`**, an extra **gateway / management-style veth** is also wired so DPU-host mode can reach the DPU path.
+- **`HostToDpu` (`networks`)**: After clusters exist, dpu-sim creates **veth data channels** between paired host and DPU **containers** (pairs can span two Kind clusters). Per pair you get `num_pairs` links (`eth0-0` … `eth0-(num_pairs-1)` on the host, `rep0-*` on the DPU). With **`kubernetes.offload_dpu`**, **`eth0-0`** is assigned a gateway IP; **`eth0-1`…`eth0-N`** (`mgmt_port_vfs_count`) are management-port VFs and higher indices are pod VFs via the device plugin.
 - **Images and registry**: Optional **local registry** is attached to the Kind container network so nodes pull custom builds (for example OVN-Kubernetes). If the registry is disabled in Kind mode, images are **built and loaded into Kind** (`kind load`) instead. DPU offload can also pull/load a **device plugin** image when needed for **`kubernetes.offload_dpu`**.
 - **OVN-Kubernetes DPU offload on Kind**: On DPU worker nodes, dpu-sim installs **Open vSwitch inside the DPU container** and sets **`external_ids`** the way the VM flow does on real DPU hardware, then installs the primary CNI (and OVN-Kubernetes in DPU mode when the topology requires it).
 
@@ -247,6 +247,8 @@ Every network needs **`name`** and **`type`**. **`nic_model`** defaults to **`vi
 |-------|----------|---------|--------|
 | `name`, `type` | Yes | - | |
 | `num_pairs` | Recommended | `1` if omitted or ≤ 0 | Number of parallel host–DPU links per pair (libvirt/OVS in VM mode) |
+| `mgmt_port_vfs_count` | No | `min(2, num_pairs-2)` (floored at `0`) | Management-port VFs (`eth0-1`…`eth0-N`); `eth0-0` is gateway-only and not in device plugin pools (`offload_dpu: true` requires at least 1 Pod pseudo-VF) |
+| `gateway_subnet` | No | `172.30.0.0/24` | IPv4 subnet for gateway addresses on `eth0-0` |
 | `nic_model` | No | `virtio` | `virtio` is recommended |
 | `bridge_name`, `gateway`, `subnet_mask`, `dhcp_start`, `dhcp_end`, `mode`, `use_ovs`, `attach_to` | - | - | Must **not** be set (will result in validation error) |
 
@@ -518,7 +520,9 @@ Validation uses the **same rules** as VM mode. Typical Kind-only configs list on
 | Field | Required | Default | Notes |
 |-------|----------|---------|--------|
 | `name`, `type` | Yes | - | |
-| `num_pairs` | Recommended | `1` if omitted or ≤ 0 | Parallel data channels per host–DPU pair |
+| `num_pairs` | Recommended | `1` if omitted or ≤ 0 | Parallel data channels per host–DPU pair (`eth0-0` … `eth0-(num_pairs-1)`) |
+| `mgmt_port_vfs_count` | No | `min(2, num_pairs-2)` (floored at `0`) | Management-port VFs (`eth0-1`…`eth0-N`); `eth0-0` is gateway-only and not in device plugin pools (`offload_dpu: true` requires at least 1 Pod pseudo-VF) |
+| `gateway_subnet` | No | `172.30.0.0/24` | IPv4 subnet for gateway addresses on `eth0-0` when `offload_dpu` is enabled |
 | `nic_model`, `bridge_name`, `gateway`, `subnet_mask`, `dhcp_start`, `dhcp_end`, `mode`, `use_ovs`, `attach_to` | - | - | Must **not** be set |
 
 #### Kind Nodes (`kind.nodes`)
