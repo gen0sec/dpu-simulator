@@ -18,3 +18,12 @@ func TestResolveAddonInstallOrderDoesNotDuplicateWhereabouts(t *testing.T) {
 	ordered := resolveAddonInstallOrder(addons)
 	require.Equal(t, addons, ordered)
 }
+
+func TestPartitionAddons(t *testing.T) {
+	pre, post := partitionAddons(
+		[]config.AddonType{config.AddonMultus, config.AddonCertManager, config.AddonMultus},
+		config.AddonMultus,
+	)
+	require.Equal(t, []config.AddonType{config.AddonMultus, config.AddonMultus}, pre)
+	require.Equal(t, []config.AddonType{config.AddonCertManager}, post)
+}

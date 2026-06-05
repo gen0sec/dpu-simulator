@@ -53,12 +53,39 @@ func (m *CNIManager) InstallCNI(cniType config.CNIType, clusterName string, k8sI
 	return nil
 }
 
+// InstallCNIAndAddons installs the cluster CNI and addons, ensuring dependencies.
+// For example, Multus is applied before OVN-Kubernetes when network segmentation
+// feature needs the Multus NAD CRD.
+func (m *CNIManager) InstallCNIAndAddons(cniType config.CNIType, clusterName, k8sIP string, addons []config.AddonType) error {
+	orderedAddons := resolveAddonInstallOrder(addons)
+
+	var preCNIAddons, postCNIAddons []config.AddonType
+	if m.needsMultusBeforeOVNKubernetes(clusterName) {
+		preCNIAddons, postCNIAddons = partitionAddons(orderedAddons, config.AddonMultus)
+	} else {
+		postCNIAddons = orderedAddons
+	}
+
+	for _, addon := range preCNIAddons {
+		if err := m.installPreCNIAddon(addon, clusterName, k8sIP); err != nil {
+			return err
+		}
+	}
+
+	if err := m.InstallCNI(cniType, clusterName, k8sIP); err != nil {
+		return err
+	}
+
+	return m.InstallAddons(postCNIAddons, clusterName, k8sIP)
+}
+
+// InstallAddon installs a single cluster addon after the primary CNI is in place.
 func (m *CNIManager) InstallAddon(addonType config.AddonType, clusterName, apiServerHost string) error {
 	log.Info("\n=== Installing addon %s on cluster %s ===", addonType, clusterName)
 
 	switch addonType {
 	case config.AddonMultus:
-		return m.installMultus(clusterName, apiServerHost)
+		return m.installMultus(clusterName, apiServerHost, false)
 	case config.AddonCertManager:
 		return m.installCertManager(clusterName)
 	case config.AddonWhereabouts:
@@ -68,6 +95,18 @@ func (m *CNIManager) InstallAddon(addonType config.AddonType, clusterName, apiSe
 	}
 }
 
+// installPreCNIAddon installs an addon that must exist before the primary CNI.
+func (m *CNIManager) installPreCNIAddon(addonType config.AddonType, clusterName, apiServerHost string) error {
+	log.Info("\n=== Installing addon %s on cluster %s before the CNI ===", addonType, clusterName)
+	switch addonType {
+	case config.AddonMultus:
+		return m.installMultus(clusterName, apiServerHost, true)
+	default:
+		return fmt.Errorf("addon %s cannot be installed before the CNI", addonType)
+	}
+}
+
+// InstallAddons installs every configured addon in dependency order.
 func (m *CNIManager) InstallAddons(addons []config.AddonType, clusterName, apiServerHost string) error {
 	orderedAddons := resolveAddonInstallOrder(addons)
 	for _, addon := range orderedAddons {
@@ -79,6 +118,9 @@ func (m *CNIManager) InstallAddons(addons []config.AddonType, clusterName, apiSe
 	return nil
 }
 
+// resolveAddonInstallOrder returns addons sorted for install. Whereabouts is
+// placed immediately before Multus when both are configured, since Multus IPAM
+// may depend on it.
 func resolveAddonInstallOrder(addons []config.AddonType) []config.AddonType {
 	ordered := make([]config.AddonType, 0, len(addons))
 
@@ -90,7 +132,6 @@ func resolveAddonInstallOrder(addons []config.AddonType) []config.AddonType {
 		}
 	}
 
-	// Install whereabouts before multus when both are explicitly configured.
 	if hasWhereabouts {
 		for _, addon := range addons {
 			if addon == config.AddonWhereabouts {
@@ -106,6 +147,40 @@ func resolveAddonInstallOrder(addons []config.AddonType) []config.AddonType {
 	}
 
 	return ordered
+}
+
+// needsMultusBeforeOVNKubernetes reports whether OVN-K on the DPU-host
+// cluster requires Multus (and its NAD CRD) to be installed before Helm runs.
+func (m *CNIManager) needsMultusBeforeOVNKubernetes(clusterName string) bool {
+	if !m.config.ShouldInstallOVNKubernetes() {
+		return false
+	}
+	if m.detectOVNKMode(clusterName) != ovnkModeDPUHost {
+		return false
+	}
+	clusterCfg := m.config.GetClusterConfig(clusterName)
+	if clusterCfg == nil {
+		return false
+	}
+	for _, addon := range clusterCfg.Addons {
+		if addon == config.AddonMultus {
+			return true
+		}
+	}
+	return false
+}
+
+// partitionAddons splits addons into those that run before and after the primary
+// CNI install. Matching entries are moved to pre; all others stay in post.
+func partitionAddons(addons []config.AddonType, target config.AddonType) (pre, post []config.AddonType) {
+	for _, addon := range addons {
+		if addon == target {
+			pre = append(pre, addon)
+			continue
+		}
+		post = append(post, addon)
+	}
+	return pre, post
 }
 
 // BuildCNIImageWithRuntime returns a registry.BuildFunc that builds container

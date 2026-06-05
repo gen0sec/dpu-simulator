@@ -253,12 +253,8 @@ func (m *VMManager) setupK8sCluster(clusterName string, clusterRoleMapping confi
 		return fmt.Errorf("failed to create CNI manager: %w", err)
 	}
 
-	if err := cniMgr.InstallCNI(cniType, clusterName, firstMasterK8sIP); err != nil {
+	if err := cniMgr.InstallCNIAndAddons(cniType, clusterName, firstMasterK8sIP, clusterCfg.Addons); err != nil {
 		return fmt.Errorf("failed to install CNI: %w", err)
-	}
-
-	if err := cniMgr.InstallAddons(clusterCfg.Addons, clusterName, firstMasterK8sIP); err != nil {
-		return fmt.Errorf("failed to install addons: %w", err)
 	}
 
 	if err := cniMgr.PostInstallPerCluster(clusterName); err != nil {
