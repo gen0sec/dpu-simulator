@@ -152,6 +152,20 @@ func resolveAddonInstallOrder(addons []config.AddonType) []config.AddonType {
 	return ordered
 }
 
+// clusterHasAddon reports whether clusterName lists addon in kubernetes.clusters[].addons.
+func (m *CNIManager) clusterHasAddon(clusterName string, addon config.AddonType) bool {
+	clusterCfg := m.config.GetClusterConfig(clusterName)
+	if clusterCfg == nil {
+		return false
+	}
+	for _, configured := range clusterCfg.Addons {
+		if configured == addon {
+			return true
+		}
+	}
+	return false
+}
+
 // needsMultusBeforeOVNKubernetes reports whether OVN-K on the DPU-host
 // cluster requires Multus (and its NAD CRD) to be installed before Helm runs.
 func (m *CNIManager) needsMultusBeforeOVNKubernetes(clusterName string) bool {
@@ -161,16 +175,7 @@ func (m *CNIManager) needsMultusBeforeOVNKubernetes(clusterName string) bool {
 	if m.detectOVNKMode(clusterName) != ovnkModeDPUHost {
 		return false
 	}
-	clusterCfg := m.config.GetClusterConfig(clusterName)
-	if clusterCfg == nil {
-		return false
-	}
-	for _, addon := range clusterCfg.Addons {
-		if addon == config.AddonMultus {
-			return true
-		}
-	}
-	return false
+	return m.clusterHasAddon(clusterName, config.AddonMultus)
 }
 
 // partitionPreCNIAddons splits addons for DPU-host OVN-K installs: Multus and

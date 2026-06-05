@@ -24,9 +24,9 @@ const MultusManifestURL = "https://raw.githubusercontent.com/k8snetworkplumbingw
 // Attachment Definition instead of auto-discovering from the CNI config
 // directory.
 //
-// skipReadinessWait defers the Multus pod readiness check until the CNI
-// has written its CNI config. This is used when Multus is installed before
-// the CNI; values-only installs skips the wait as well for OVN-Kubernetes.
+// skipReadinessWait defers the Multus pod readiness check until after the
+// primary CNI is installed. PostInstallPerCluster calls ensureMultusReady to
+// complete the wait. Values-only OVN-Kubernetes installs also skip here.
 //
 // See: https://ovn-kubernetes.io/blog/dpu-acceleration/#install-multus
 func (m *CNIManager) installMultus(clusterName, apiServerHost string, skipReadinessWait bool) error {
@@ -79,16 +79,41 @@ func (m *CNIManager) installMultus(clusterName, apiServerHost string, skipReadin
 		return nil
 	}
 
+	return m.waitForMultusReady(clusterName)
+}
+
+// ensureMultusReady completes a deferred Multus readiness check after the
+// primary CNI is installed. Called from PostInstallPerCluster when Multus
+// was applied pre-CNI with skipReadinessWait. No-op when Multus is not
+// configured, or when OVN-Kubernetes install is deferred to an external
+// Helm run (values-only mode).
+func (m *CNIManager) ensureMultusReady(clusterName string) error {
+	if !m.clusterHasAddon(clusterName, config.AddonMultus) {
+		return nil
+	}
+	if deferSystemDeploymentsUntilExternalOVNK(m.config, clusterName) {
+		log.Info("Deferring Multus readiness on cluster %s until external OVN-Kubernetes install", clusterName)
+		return nil
+	}
+
+	return m.waitForMultusReady(clusterName)
+}
+
+// waitForMultusReady blocks until kube-system Multus daemonset pods are ready.
+// On OVN-Kubernetes clusters Multus also waits for the readiness indicator file
+// (10-ovn-kubernetes.conf) configured in the thick daemon config. Skipped when
+// OVN-Kubernetes Helm install is external (values-only mode).
+func (m *CNIManager) waitForMultusReady(clusterName string) error {
 	if m.clusterUsesOVNKubernetes(clusterName) && !m.config.ShouldInstallOVNKubernetes() {
 		log.Info("Skipping Multus readiness wait until external OVN-Kubernetes Helm install creates the readiness indicator")
 		return nil
 	}
 
-	// Wait for Multus daemonset pods to be ready.
+	log.Info("Waiting for Multus pods to be ready on cluster %s...", clusterName)
 	if err := m.k8sClient.WaitForPodsReady("kube-system", "name=multus", 3*time.Minute); err != nil {
 		return fmt.Errorf("multus pods are not ready: %w", err)
 	}
-
+	log.Info("✓ Multus is ready")
 	return nil
 }
 
