@@ -19,10 +19,15 @@ import (
 )
 
 // PostInstallPerCluster applies cluster-environment patches after the CNI, device plugin
-// (when applicable), and addons are installed on this cluster. For example, in
-// OVN-Kubernetes DPU-host mode it patches system Deployments so workloads request the simulated VF.
+// (when applicable), and addons are installed on this cluster. It waits for Multus when
+// readiness was deferred during a pre-CNI install. In OVN-Kubernetes DPU-host mode it
+// patches system Deployments so workloads request the simulated VF.
 // It then scales CoreDNS and local-path-provisioner to zero; PostInstall restores them.
 func (m *CNIManager) PostInstallPerCluster(clusterName string) error {
+	if err := m.ensureMultusReady(clusterName); err != nil {
+		return fmt.Errorf("multus readiness: %w", err)
+	}
+
 	mode := m.detectOVNKMode(clusterName)
 
 	// During Cluster installation, we suspend CoreDNS and local-path-provisioner

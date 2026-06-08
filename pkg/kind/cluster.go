@@ -221,12 +221,8 @@ func (m *KindManager) InstallCNI(cmdExec platform.CommandExecutor) error {
 			return fmt.Errorf("failed to get internal API server IP for cluster %s: %w", clusterCfg.Name, err)
 		}
 
-		if err := cniMgr.InstallCNI(cniType, clusterCfg.Name, apiServerIP); err != nil {
+		if err := cniMgr.InstallCNIAndAddons(cniType, clusterCfg.Name, apiServerIP, clusterCfg.Addons); err != nil {
 			return fmt.Errorf("failed to install CNI on cluster %s: %w", clusterCfg.Name, err)
-		}
-
-		if err := cniMgr.InstallAddons(clusterCfg.Addons, clusterCfg.Name, apiServerIP); err != nil {
-			return fmt.Errorf("failed to install addons: %w", err)
 		}
 
 		if err := cniMgr.PostInstallPerCluster(clusterCfg.Name); err != nil {

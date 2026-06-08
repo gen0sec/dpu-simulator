@@ -196,7 +196,7 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 		if err := m.labelNodesForDPUHost(clusterName); err != nil {
 			return fmt.Errorf("failed to label DPU-host nodes: %w", err)
 		}
-		if err := deviceplugin.DeployDevicePlugin(m.k8sClient, dpImageRef); err != nil {
+		if err := deviceplugin.DeployDevicePlugin(m.k8sClient, dpImageRef, m.config.DPUHostManagementPortVFsCount()); err != nil {
 			return fmt.Errorf("failed to deploy device plugin on DPU-host cluster: %w", err)
 		}
 	case ovnkModeDPU:
@@ -253,9 +253,7 @@ func (m *CNIManager) installOVNKubernetes(clusterName string, k8sIP string) erro
 //   - DPU:      values-single-node-zone-dpu.yaml, global.dpuImage.*, host credentials
 func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, apiServerURL, podCIDR, serviceCIDR, ovnImage string) error {
 	chartPath := filepath.Join(ovnkRepoPath, "helm", "ovn-kubernetes")
-	// Embedded installs do not enable network segmentation, so keep the DPU
-	// host on the explicit management netdev instead of requesting VFs.
-	overrides, err := m.ovnkHelmOverrides(mode, clusterName, ovnImage, true, false)
+	overrides, err := m.ovnkHelmOverrides(mode, clusterName, ovnImage, true, true)
 	if err != nil {
 		return err
 	}
@@ -264,20 +262,18 @@ func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, ap
 
 	switch mode {
 	case ovnkModeFull, ovnkModeDPUHost:
-		args = append(args,
-			"-f", "values-single-node-zone.yaml",
-			"--set", fmt.Sprintf("k8sAPIServer=%s", apiServerURL),
-			"--set", fmt.Sprintf("podNetwork=%s", podCIDR),
-			"--set", fmt.Sprintf("serviceNetwork=%s", serviceCIDR),
-			"--set", "mtu=1400",
-			"--set", "global.enableAdminNetworkPolicy=true",
-			"--set", "global.enableEgressIp=true",
-			"--set", "global.egressIpHealthCheckPort=9107",
-			"--set", "global.enableEgressFirewall=true",
-			"--set", "global.enableEgressQos=true",
-			"--set", "global.enableEgressService=true",
-			"--set", "global.enableMultiExternalGateway=true",
-			"--set", "global.enablePersistentIPs=true",
+		args = append(args, "-f", "values-single-node-zone.yaml")
+		overrides = append(overrides,
+			helmValue{key: "k8sAPIServer", value: apiServerURL},
+			helmValue{key: "podNetwork", value: podCIDR},
+			helmValue{key: "serviceNetwork", value: serviceCIDR},
+			helmValue{key: "global.enableAdminNetworkPolicy", value: true},
+			helmValue{key: "global.enableEgressIp", value: true},
+			helmValue{key: "global.enableEgressFirewall", value: true},
+			helmValue{key: "global.enableEgressQos", value: true},
+			helmValue{key: "global.enableEgressService", value: true},
+			helmValue{key: "global.enableMultiExternalGateway", value: true},
+			helmValue{key: "global.enablePersistentIPs", value: false},
 		)
 
 		if mode == ovnkModeFull {
@@ -288,9 +284,7 @@ func (m *CNIManager) runHelmInstall(mode ovnkMode, clusterName, ovnkRepoPath, ap
 			)
 		}
 	case ovnkModeDPU:
-		args = append(args,
-			"-f", "values-single-node-zone-dpu.yaml",
-		)
+		args = append(args, "-f", "values-single-node-zone-dpu.yaml")
 	}
 	args = appendHelmSetArgs(args, overrides)
 

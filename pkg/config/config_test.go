@@ -256,12 +256,12 @@ func TestDPUHostManagementPortVFsCount(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name:     "falls back to zero when no resource VFs are available",
+			name:     "falls back to zero when only the gateway interface exists",
 			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 2},
 			expected: 0,
 		},
 		{
-			name:     "clamps default to zero when num pairs is below reserved channels",
+			name:     "falls back to zero when num_pairs is too small for mgmt and pod VFs",
 			network:  NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 1},
 			expected: 0,
 		},
@@ -286,7 +286,7 @@ func TestValidateHostToDpuManagementPortVFsCount(t *testing.T) {
 			network: NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 4, MgmtPortVFsCount: 3},
 		},
 		{
-			name:    "configured count requires unavailable VF",
+			name:    "configured count leaves no pod VF after gateway and mgmt VFs",
 			network: NetworkConfig{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 2, MgmtPortVFsCount: 1},
 		},
 	}
@@ -299,6 +299,20 @@ func TestValidateHostToDpuManagementPortVFsCount(t *testing.T) {
 			assert.Contains(t, err.Error(), "mgmt_port_vfs_count")
 		})
 	}
+}
+
+func TestValidateHostToDpuMgmtPortVFsCountRequiresOneWhenOffloadDPU(t *testing.T) {
+	cfg := Config{
+		Networks: []NetworkConfig{
+			{Name: "host-to-dpu", Type: HostToDpuNetworkType, NumPairs: 2},
+		},
+		Kubernetes: KubernetesConfig{OffloadDPU: true},
+	}
+
+	err := cfg.validateAndSetDefaults()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mgmt_port_vfs_count")
+	assert.Contains(t, err.Error(), "offload_dpu")
 }
 
 func TestDPUHostGatewaySubnet(t *testing.T) {

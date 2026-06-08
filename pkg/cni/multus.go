@@ -23,8 +23,13 @@ const MultusManifestURL = "https://raw.githubusercontent.com/k8snetworkplumbingw
 // so Multus delegates the default pod network to the "ovn-primary" Network
 // Attachment Definition instead of auto-discovering from the CNI config
 // directory.
+//
+// skipReadinessWait defers the Multus pod readiness check until after the
+// primary CNI is installed. PostInstallPerCluster calls ensureMultusReady to
+// complete the wait. Values-only OVN-Kubernetes installs also skip here.
+//
 // See: https://ovn-kubernetes.io/blog/dpu-acceleration/#install-multus
-func (m *CNIManager) installMultus(clusterName, apiServerHost string) error {
+func (m *CNIManager) installMultus(clusterName, apiServerHost string, skipReadinessWait bool) error {
 	log.Debug("Installing Multus CNI...")
 
 	manifest, err := downloadManifest(MultusManifestURL)
@@ -69,19 +74,53 @@ func (m *CNIManager) installMultus(clusterName, apiServerHost string) error {
 
 	log.Info("✓ Multus is installed")
 
+	if skipReadinessWait {
+		log.Info("Skipping Multus readiness wait until the CNI has written its CNI config")
+		return nil
+	}
+
+	return m.waitForMultusReady(clusterName)
+}
+
+// ensureMultusReady completes a deferred Multus readiness check after the
+// primary CNI is installed. Called from PostInstallPerCluster when Multus
+// was applied pre-CNI with skipReadinessWait. No-op when Multus is not
+// configured, or when OVN-Kubernetes install is deferred to an external
+// Helm run (values-only mode).
+func (m *CNIManager) ensureMultusReady(clusterName string) error {
+	if !m.clusterHasAddon(clusterName, config.AddonMultus) {
+		return nil
+	}
+	if deferSystemDeploymentsUntilExternalOVNK(m.config, clusterName) {
+		log.Info("Deferring Multus readiness on cluster %s until external OVN-Kubernetes install", clusterName)
+		return nil
+	}
+
+	return m.waitForMultusReady(clusterName)
+}
+
+// waitForMultusReady blocks until kube-system Multus daemonset pods are ready.
+// On OVN-Kubernetes clusters Multus also waits for the readiness indicator file
+// (10-ovn-kubernetes.conf) configured in the thick daemon config. Skipped when
+// OVN-Kubernetes Helm install is external (values-only mode).
+func (m *CNIManager) waitForMultusReady(clusterName string) error {
 	if m.clusterUsesOVNKubernetes(clusterName) && !m.config.ShouldInstallOVNKubernetes() {
 		log.Info("Skipping Multus readiness wait until external OVN-Kubernetes Helm install creates the readiness indicator")
 		return nil
 	}
 
-	// Wait for Multus daemonset pods to be ready.
+	log.Info("Waiting for Multus pods to be ready on cluster %s...", clusterName)
 	if err := m.k8sClient.WaitForPodsReady("kube-system", "name=multus", 3*time.Minute); err != nil {
 		return fmt.Errorf("multus pods are not ready: %w", err)
 	}
-
+	log.Info("✓ Multus is ready")
 	return nil
 }
 
+// patchMultusDaemonSet updates the kube-multus DaemonSet after manifest apply.
+// Kind and VM clusters often need the in-cluster API server host/port injected
+// into the Multus container env, and CPU/memory limits are removed so Multus
+// can start reliably on constrained lab nodes.
 func (m *CNIManager) patchMultusDaemonSet(apiServerHost string) error {
 	apiServerHost = strings.TrimSpace(apiServerHost)
 	removedLimits := false
@@ -139,6 +178,7 @@ func (m *CNIManager) patchMultusDaemonSet(apiServerHost string) error {
 	return nil
 }
 
+// removeCPUMemoryLimits clears CPU and memory limits on a container when set.
 func removeCPUMemoryLimits(container *corev1.Container) bool {
 	if container.Resources.Limits == nil {
 		return false
@@ -159,6 +199,8 @@ func removeCPUMemoryLimits(container *corev1.Container) bool {
 	return changed
 }
 
+// setContainerEnv sets a plain env var on a container, replacing an existing
+// entry when present. It returns whether the container spec changed.
 func setContainerEnv(container *corev1.Container, name, value string) bool {
 	for i := range container.Env {
 		if container.Env[i].Name == name {
@@ -175,6 +217,8 @@ func setContainerEnv(container *corev1.Container, name, value string) bool {
 	return true
 }
 
+// clusterUsesOVNKubernetes reports whether clusterName uses OVN-Kubernetes as
+// its primary CNI (as opposed to flannel/kindnet with optional OVN-K DPU mode).
 func (m *CNIManager) clusterUsesOVNKubernetes(clusterName string) bool {
 	return m.config.GetCNIType(clusterName) == config.CNIOVNKubernetes
 }
