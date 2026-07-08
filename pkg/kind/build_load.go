@@ -36,14 +36,14 @@ func (m *KindManager) BuildAndLoadImagesFromRegistryConfig(cmdExec platform.Comm
 			if err != nil {
 				return fmt.Errorf("prepare registry container %q image for Kind: %w", container.Name, err)
 			}
+			var ovnkClusters []string
 			for _, cl := range cfg.Kubernetes.Clusters {
-				if !cfg.ClusterNeedsOVNKubernetesImage(cl.Name) {
-					continue
+				if cfg.ClusterNeedsOVNKubernetesImage(cl.Name) {
+					ovnkClusters = append(ovnkClusters, cl.Name)
 				}
-				if err := m.KindLoadImage(cmdExec, cl.Name, kindRef); err != nil {
-					return fmt.Errorf("kind load %q into cluster %q: %w", kindRef, cl.Name, err)
-				}
-				log.Info("✓ OVN-Kubernetes image loaded into cluster %s", cl.Name)
+			}
+			if err := m.KindLoadImageIntoClusters(cmdExec, kindRef, ovnkClusters); err != nil {
+				return fmt.Errorf("kind load %q into clusters %v: %w", kindRef, ovnkClusters, err)
 			}
 		default:
 			return fmt.Errorf("unsupported CNI type for registry container build: %q", container.CNI)

@@ -159,6 +159,9 @@ jobs:
         env:
           KIND_EXPERIMENTAL_PROVIDER: docker
           CONFIG_PATH: ${{ steps.paths.outputs.config_path }}
+          # Keep docker save temp files off of /tmp to runner.temp
+          TMPDIR: ${{ runner.temp }}
+          DPU_SIM_KIND_IMAGE_TMPDIR: ${{ runner.temp }}
         run: |
           "${DPU_SIM_ROOT}/bin/dpu-sim" --config "${CONFIG_PATH}" --ovn-kubernetes-path "${OVN_KUBERNETES_ROOT}"
 

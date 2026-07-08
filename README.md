@@ -785,6 +785,23 @@ When `registry.enabled` is true (or omitted), dpu-sim automatically:
    - **VM mode**: CRI-O on each node is configured to trust insecure HTTP pulls from `registry.insecure_endpoints` (if set), otherwise from the host's management network gateway IP (e.g. `192.168.120.1:5000`)
 3. **If `registry.containers` is set**, dpu-sim also builds/pushes those images and uses them in CNI deployment paths
 
+**Kind-only (`registry.enabled: false` with `registry.containers`):** dpu-sim still builds those images, but loads them into Kind nodes with `docker`/`podman save` and `kind load image-archive` instead of pushing to a local registry. When the same image is needed on multiple clusters (for example OVN-Kubernetes on both host and DPU clusters in offload mode), the image is exported to a tar archive once and loaded into each cluster from that file.
+
+#### Kind image load temp directory
+
+When loading images into Kind without a registry, dpu-sim writes a temporary tar archive before each `kind load image-archive`. By default that file is created in the system temp directory (usually `/tmp`). Large CNI images (especially OVN-Kubernetes) can be several gigabytes; on systems where `/tmp` is a small tmpfs or nearly full, the export can fail with `no space left on device`.
+
+Set **`DPU_SIM_KIND_IMAGE_TMPDIR`** to a directory on a filesystem with enough free space:
+
+```bash
+export DPU_SIM_KIND_IMAGE_TMPDIR=/var/tmp/dpu-sim-kind
+./bin/dpu-sim --config config-kind-ovnk-offload.yaml
+```
+
+The directory must exist and be writable. dpu-sim removes each archive after the load completes.
+
+**Note:** `docker save` / `podman save` may also use scratch files under **`TMPDIR`** (for example Docker's `.docker_temp_*` files). If saves still fail after setting `DPU_SIM_KIND_IMAGE_TMPDIR`, point **`TMPDIR`** at the same larger filesystem as well. GitHub Actions (CI) workflows in this repository set both for the deploy step to runner.temp.
+
 #### Rebuilding and Redeploying CNI Images
 
 After making changes to the CNI source code, you can rebuild and redeploy without tearing down the entire environment:
