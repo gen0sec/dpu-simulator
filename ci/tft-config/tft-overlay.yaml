@@ -1,5 +1,5 @@
 tft:
-  - name: "kind-full-suite"
+  - name: "tft-overlay"
     namespace: "default"
     test_cases: "1-26,35-36"
     duration: 5

@@ -9,7 +9,7 @@ on:
         type: string
         default: ci/config-kind-ovnk-offload.yaml
       tft-config:
-        description: TFT config path in the caller repository; empty uses the dpu-sim full suite.
+        description: TFT config path in the caller repository; empty uses the dpu-sim suite for the deploy mode.
         required: false
         type: string
         default: ""
@@ -79,11 +79,6 @@ jobs:
           DEPLOY_MODE: ${{ inputs.deploy-mode }}
         run: |
           config_path="${DPU_SIM_ROOT}/${CONFIG}"
-          if [ -n "${TFT_CONFIG}" ]; then
-            tft_config_path="${GITHUB_WORKSPACE}/${TFT_CONFIG}"
-          else
-            tft_config_path="${DPU_SIM_ROOT}/ci/tft-config/full-suite.yaml"
-          fi
           case "${DEPLOY_MODE}" in
             overlay|no-overlay) ;;
             *)
@@ -91,6 +86,13 @@ jobs:
               exit 1
               ;;
           esac
+          if [ -n "${TFT_CONFIG}" ]; then
+            tft_config_path="${GITHUB_WORKSPACE}/${TFT_CONFIG}"
+          elif [ "${DEPLOY_MODE}" = "no-overlay" ]; then
+            tft_config_path="${DPU_SIM_ROOT}/ci/tft-config/tft-no-overlay.yaml"
+          else
+            tft_config_path="${DPU_SIM_ROOT}/ci/tft-config/tft-overlay.yaml"
+          fi
           if [ ! -f "${config_path}" ]; then
             echo "::error::dpu-sim config not found: ${config_path}"
             exit 1
