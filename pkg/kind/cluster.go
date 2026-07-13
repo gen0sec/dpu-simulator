@@ -442,8 +442,52 @@ func (m *KindManager) kindExperimentalProviderEnv() []string {
 	return nil
 }
 
+// kindImageArchiveTempDir returns the directory for temporary image archive files
+// used by KindLoadImage. Override /tmp with DPU_SIM_KIND_IMAGE_TMPDIR
+func kindImageArchiveTempDir() string {
+	return os.Getenv("DPU_SIM_KIND_IMAGE_TMPDIR")
+}
+
+// saveImageArchive exports imageName from the local container runtime to a temporary tar.
+// The caller must invoke the returned cleanup function when the archive is no longer needed.
+func (m *KindManager) saveImageArchive(cmdExec platform.CommandExecutor, imageName string) (archivePath string, cleanup func(), err error) {
+	tmpArchive, err := os.CreateTemp(kindImageArchiveTempDir(), "dpu-sim-kind-image-*.tar")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp file for kind image load: %w", err)
+	}
+	archivePath = tmpArchive.Name()
+	cleanup = func() { _ = os.Remove(archivePath) }
+	if err := tmpArchive.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("close temp file for kind image load failed: %w", err)
+	}
+
+	log.Info("Saving image %s to archive (via %s save)...", imageName, m.containerBin)
+	if err := cmdExec.RunCmd(log.LevelInfo, m.containerBin, "save", "-o", archivePath, imageName); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to save image %q with %s: %w", imageName, m.containerBin, err)
+	}
+
+	return archivePath, cleanup, nil
+}
+
+// loadImageArchiveIntoCluster loads the image archive into a Kind cluster.
+func (m *KindManager) loadImageArchiveIntoCluster(cmdExec platform.CommandExecutor, clusterName, archivePath, imageName string) error {
+	if !m.ClusterExists(clusterName) {
+		return fmt.Errorf("cluster %s does not exist", clusterName)
+	}
+
+	log.Info("Loading image %s into cluster %s (via kind load image-archive)...", imageName, clusterName)
+	if err := cmdExec.RunCmdWithExtraEnv(log.LevelInfo, m.kindExperimentalProviderEnv(), "kind", "load", "image-archive", archivePath, "--name", clusterName); err != nil {
+		return fmt.Errorf("failed to kind load image archive for %s: %w", imageName, err)
+	}
+
+	log.Info("✓ Loaded image %s into cluster %s", imageName, clusterName)
+	return nil
+}
+
 // KindLoadImage loads a container image from the local runtime (same engine Kind uses:
-// docker or podman) into a Kind cluster.
+// docker or podman) into a single Kind cluster.
 //
 // We use "kind load image-archive" after a local "docker/podman save" instead of
 // "kind load docker-image" because the latter only consults the Docker daemon's
@@ -451,32 +495,31 @@ func (m *KindManager) kindExperimentalProviderEnv() []string {
 // store (Docker 27+ default; see kubernetes-sigs/kind#3795) or when images were
 // built with Podman while Kind is configured for the podman provider.
 func (m *KindManager) KindLoadImage(cmdExec platform.CommandExecutor, clusterName, imageName string) error {
-	if !m.ClusterExists(clusterName) {
-		return fmt.Errorf("cluster %s does not exist", clusterName)
+	return m.KindLoadImageIntoClusters(cmdExec, imageName, []string{clusterName})
+}
+
+// KindLoadImageIntoClusters loads a container image from the local runtime (same engine Kind uses:
+// docker or podman) into a multiple Kind clusters.
+//
+// There is an optimaization that saves imageName once and loads the archive into each cluster.
+// This avoids duplicating large tar exports when the same image is needed on multiple Kind clusters.
+func (m *KindManager) KindLoadImageIntoClusters(cmdExec platform.CommandExecutor, imageName string, clusterNames []string) error {
+	if len(clusterNames) == 0 {
+		return nil
 	}
 
-	log.Info("Loading image %s into cluster %s (via %s save + kind load image-archive)...", imageName, clusterName, m.containerBin)
-
-	tmpFile, err := os.CreateTemp("", "dpu-sim-kind-image-*.tar")
+	archivePath, cleanup, err := m.saveImageArchive(cmdExec, imageName)
 	if err != nil {
-		return fmt.Errorf("create temp file for kind image load: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close temp file for kind image load: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpPath) }()
+	defer cleanup()
 
-	if err := cmdExec.RunCmd(log.LevelInfo, m.containerBin, "save", "-o", tmpPath, imageName); err != nil {
-		return fmt.Errorf("failed to save image %q with %s: %w", imageName, m.containerBin, err)
+	for _, clusterName := range clusterNames {
+		if err := m.loadImageArchiveIntoCluster(cmdExec, clusterName, archivePath, imageName); err != nil {
+			return fmt.Errorf("kind load %q into cluster %q: %w", imageName, clusterName, err)
+		}
 	}
 
-	if err := cmdExec.RunCmdWithExtraEnv(log.LevelInfo, m.kindExperimentalProviderEnv(), "kind", "load", "image-archive", tmpPath, "--name", clusterName); err != nil {
-		return fmt.Errorf("failed to kind load image archive for %s: %w", imageName, err)
-	}
-
-	log.Info("✓ Loaded image: %s", imageName)
 	return nil
 }
 

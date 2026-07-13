@@ -43,6 +43,33 @@ jobs:
       OVN_KUBERNETES_ROOT: ${{ github.workspace }}/ovn-kubernetes
       TFT_ROOT: ${{ github.workspace }}/kubernetes-traffic-flow-tests
     steps:
+      - name: Free disk space
+        run: |
+          echo "Disk before cleanup:"
+          df -h /
+
+          # Preinstalled SDKs
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
+          sudo rm -rf "${AGENT_TOOLSDIRECTORY}"
+
+          # Drop unused preloaded Docker images on the runner.
+          sudo docker image prune --all --force || true
+
+          # Remove large preinstalled packages
+          sudo apt-get remove -y --fix-missing \
+            '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' \
+            '^mongodb-.*' '^mysql-.*' \
+            azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri \
+            google-cloud-sdk google-cloud-cli \
+            || true
+          sudo apt-get autoremove -y || true
+          sudo apt-get clean || true
+
+          echo "Disk after cleanup:"
+          df -h /
+
       - name: Checkout caller repository
         uses: actions/checkout@v4
         with:
@@ -159,6 +186,9 @@ jobs:
         env:
           KIND_EXPERIMENTAL_PROVIDER: docker
           CONFIG_PATH: ${{ steps.paths.outputs.config_path }}
+          # Keep docker save temp files off of /tmp to runner.temp
+          TMPDIR: ${{ runner.temp }}
+          DPU_SIM_KIND_IMAGE_TMPDIR: ${{ runner.temp }}
         run: |
           "${DPU_SIM_ROOT}/bin/dpu-sim" --config "${CONFIG_PATH}" --ovn-kubernetes-path "${OVN_KUBERNETES_ROOT}"
 
