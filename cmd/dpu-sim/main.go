@@ -353,11 +353,22 @@ func doVMDeploy(cfg *config.Config, vmMgr *vm.VMManager) error {
 		return fmt.Errorf("failed to create VMs: %w", err)
 	}
 
-	// Wait for VMs to get IP addresses
+	// Wait for VMs to get IP addresses. Under TCG emulation (cross-arch guests)
+	// boots are far slower than KVM, so the per-VM boot timeout is configurable
+	// via DPU_SIM_BOOT_TIMEOUT (Go duration, e.g. "30m"); default 5m for KVM.
+	bootTimeout := 5 * time.Minute
+	if v := strings.TrimSpace(os.Getenv("DPU_SIM_BOOT_TIMEOUT")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			bootTimeout = d
+			log.Info("Using DPU_SIM_BOOT_TIMEOUT=%s for VM boot waits", bootTimeout)
+		} else {
+			log.Warn("ignoring invalid DPU_SIM_BOOT_TIMEOUT=%q (want a Go duration like 30m)", v)
+		}
+	}
 	log.Info("\n=== Waiting for VMs to boot and get IPs ===")
 	for _, vmCfg := range cfg.VMs {
 		log.Info("Waiting for %s to get an IP address...", vmCfg.Name)
-		ip, err := vmMgr.WaitForVMIP(vmCfg.Name, config.MgmtNetworkName, 5*time.Minute)
+		ip, err := vmMgr.WaitForVMIP(vmCfg.Name, config.MgmtNetworkName, bootTimeout)
 		if err != nil {
 			return fmt.Errorf("failed to get IP for %s: %w", vmCfg.Name, err)
 		}
@@ -365,7 +376,7 @@ func doVMDeploy(cfg *config.Config, vmMgr *vm.VMManager) error {
 
 		cmdExec := platform.NewSSHExecutor(&cfg.SSH, ip)
 		log.Info("Waiting for SSH on %s...", vmCfg.Name)
-		if err := cmdExec.WaitUntilReady(5 * time.Minute); err != nil {
+		if err := cmdExec.WaitUntilReady(bootTimeout); err != nil {
 			return fmt.Errorf("failed to wait for SSH on %s: %w", vmCfg.Name, err)
 		}
 		log.Info("✓ SSH ready on %s, waiting for cloud-init to finish...", vmCfg.Name)
