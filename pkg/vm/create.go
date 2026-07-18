@@ -40,8 +40,8 @@ func (m *VMManager) CreateVM(vmCfg config.VMConfig) error {
 
 	spec := m.hostSpec
 	var nvramPath string
-	if m.hostDistro.Architecture == platform.AARCH64 && (spec.uefiLoader == "" || spec.uefiVarsTemplate == "") {
-		return fmt.Errorf("missing aarch64 UEFI firmware: install edk2/aavmf and ensure QEMU_EFI-pflash and vars template are available")
+	if spec.libvirtArch == "aarch64" && (spec.uefiLoader == "" || spec.uefiVarsTemplate == "") {
+		return fmt.Errorf("missing aarch64 UEFI firmware: install qemu-efi-aarch64/edk2 (e.g. /usr/share/AAVMF/AAVMF_CODE.fd)")
 	}
 	if spec.uefiLoader != "" && spec.uefiVarsTemplate != "" {
 		nvramPath, err = ensureUEFINvram(vmCfg.Name, spec.uefiVarsTemplate)
@@ -102,6 +102,16 @@ type archSpec struct {
 	machine     string
 	cpuMode     string
 	emulator    string
+	// domainType is the libvirt domain type: "kvm" for hardware acceleration,
+	// "qemu" for TCG software emulation (used when the target arch differs from
+	// the host arch, e.g. an aarch64 guest on an x86_64 host).
+	domainType string
+	// cpuModel is the concrete CPU model emitted when cpuMode == "custom"
+	// (host-passthrough is invalid under TCG, so cross-arch guests name a model).
+	cpuModel string
+	// cdromBus is the bus for the cloud-init cdrom; "sata" on x86, "scsi" on
+	// aarch64 (the 'virt' machine has no built-in SATA controller).
+	cdromBus string
 	// uefiLoader/uefiVarsTemplate are optional and set when firmware-backed boot
 	// is available on the host architecture.
 	uefiLoader       string
@@ -113,19 +123,38 @@ type archSpec struct {
 	enableACPI  bool
 }
 
-func hostArchSpec(hostArch platform.Architecture) (archSpec, error) {
-	emulator, err := resolveQEMUEmulator(hostArch)
+// hostArchSpec resolves the virtualization profile for targetArch. When tcg is
+// true the domain runs under software emulation (domain type "qemu" + a named
+// CPU model), which is required when targetArch differs from the host arch.
+func hostArchSpec(targetArch platform.Architecture, tcg bool) (archSpec, error) {
+	emulator, err := resolveQEMUEmulator(targetArch)
 	if err != nil {
 		return archSpec{}, err
 	}
 
-	switch hostArch {
+	// Acceleration selects the libvirt domain type and how the CPU is expressed:
+	// host-passthrough only works under KVM; TCG must name a concrete model.
+	domainType := "kvm"
+	cpuMode := "host-passthrough"
+	cpuModel := ""
+	if tcg {
+		domainType = "qemu"
+		cpuMode = "custom"
+	}
+
+	switch targetArch {
 	case platform.AARCH64:
 		loader, varsTemplate := findAarch64UEFIFirmware()
+		if tcg {
+			cpuModel = "cortex-a72"
+		}
 		return archSpec{
 			libvirtArch:      "aarch64",
 			machine:          "virt",
-			cpuMode:          "host-passthrough",
+			cpuMode:          cpuMode,
+			cpuModel:         cpuModel,
+			domainType:       domainType,
+			cdromBus:         "scsi",
 			emulator:         emulator,
 			uefiLoader:       loader,
 			uefiVarsTemplate: varsTemplate,
@@ -135,17 +164,23 @@ func hostArchSpec(hostArch platform.Architecture) (archSpec, error) {
 		}, nil
 
 	case platform.X86_64:
+		if tcg {
+			cpuModel = "qemu64"
+		}
 		return archSpec{
 			libvirtArch: "x86_64",
 			machine:     "q35",
-			cpuMode:     "host-passthrough",
+			cpuMode:     cpuMode,
+			cpuModel:    cpuModel,
+			domainType:  domainType,
+			cdromBus:    "sata",
 			emulator:    emulator,
 			enableIOMMU: true,
 			enableAPIC:  true,
 			enableACPI:  true,
 		}, nil
 	default:
-		return archSpec{}, fmt.Errorf("unsupported Architecture: %v", hostArch)
+		return archSpec{}, fmt.Errorf("unsupported Architecture: %v", targetArch)
 	}
 }
 
@@ -293,7 +328,11 @@ func ensureUEFINvram(vmName, templatePath string) (string, error) {
 func (m *VMManager) GenerateVMXML(vmCfg config.VMConfig, diskPath, cloudInitPath string, spec archSpec, nvramPath string) string {
 	var sb strings.Builder
 
-	sb.WriteString("<domain type='kvm'>\n")
+	domainType := spec.domainType
+	if domainType == "" {
+		domainType = "kvm"
+	}
+	sb.WriteString(fmt.Sprintf("<domain type='%s'>\n", domainType))
 	sb.WriteString(fmt.Sprintf("  <name>%s</name>\n", vmCfg.Name))
 	sb.WriteString(fmt.Sprintf("  <memory unit='MiB'>%d</memory>\n", vmCfg.Memory))
 	sb.WriteString(fmt.Sprintf("  <vcpu>%d</vcpu>\n", vmCfg.VCPUs))
@@ -319,7 +358,13 @@ func (m *VMManager) GenerateVMXML(vmCfg config.VMConfig, diskPath, cloudInitPath
 	}
 	sb.WriteString("  </features>\n")
 
-	if spec.cpuMode != "" {
+	if spec.cpuMode == "custom" && spec.cpuModel != "" {
+		// Cross-arch/TCG: name a concrete model and don't check it against the
+		// host CPU (the host is a different architecture).
+		sb.WriteString("  <cpu mode='custom' match='exact' check='none'>\n")
+		sb.WriteString(fmt.Sprintf("    <model fallback='allow'>%s</model>\n", spec.cpuModel))
+		sb.WriteString("  </cpu>\n")
+	} else if spec.cpuMode != "" {
 		sb.WriteString(fmt.Sprintf("  <cpu mode='%s'/>\n", spec.cpuMode))
 	}
 
@@ -344,10 +389,14 @@ func (m *VMManager) GenerateVMXML(vmCfg config.VMConfig, diskPath, cloudInitPath
 	sb.WriteString("      <target dev='vda' bus='virtio'/>\n")
 	sb.WriteString("    </disk>\n")
 
+	cdromBus := spec.cdromBus
+	if cdromBus == "" {
+		cdromBus = "sata"
+	}
 	sb.WriteString("    <disk type='file' device='cdrom'>\n")
 	sb.WriteString("      <driver name='qemu' type='raw'/>\n")
 	sb.WriteString(fmt.Sprintf("      <source file='%s'/>\n", cloudInitPath))
-	sb.WriteString("      <target dev='sda' bus='sata'/>\n")
+	sb.WriteString(fmt.Sprintf("      <target dev='sda' bus='%s'/>\n", cdromBus))
 	sb.WriteString("      <readonly/>\n")
 	sb.WriteString("    </disk>\n")
 

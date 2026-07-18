@@ -2,6 +2,8 @@ package vm
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"libvirt.org/go/libvirt"
 
@@ -49,7 +51,28 @@ func NewVMManager(cfg *config.Config, hostExec platform.CommandExecutor) (*VMMan
 	}
 	log.Debug("✓ Connected to libvirt: %s", hostname)
 
-	hostSpec, err := hostArchSpec(distro.Architecture)
+	// Target arch defaults to the host arch (KVM-accelerated). DPU_SIM_TARGET_ARCH
+	// overrides it to emulate a different arch under TCG — e.g. an aarch64
+	// BlueField-style DPU on an x86_64 host.
+	targetArch := distro.Architecture
+	tcg := false
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("DPU_SIM_TARGET_ARCH"))); v != "" {
+		switch v {
+		case "aarch64", "arm64":
+			targetArch = platform.AARCH64
+		case "x86_64", "amd64":
+			targetArch = platform.X86_64
+		default:
+			conn.Close()
+			return nil, fmt.Errorf("invalid DPU_SIM_TARGET_ARCH %q (want aarch64|x86_64)", v)
+		}
+		tcg = targetArch != distro.Architecture
+		if tcg {
+			log.Info("⚠ DPU_SIM_TARGET_ARCH=%s differs from host %s → TCG software emulation (slow)", targetArch, distro.Architecture)
+		}
+	}
+
+	hostSpec, err := hostArchSpec(targetArch, tcg)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to determine host virtualization settings: %w", err)
